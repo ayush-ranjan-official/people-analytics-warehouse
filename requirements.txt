@@ -8,6 +8,7 @@ dbt-bigquery==1.12.1
 # Source system: synthetic data generator + Postgres loader
 psycopg[binary]==3.3.6
 faker==40.43.0
+numpy==2.5.4
 pandas==3.0.6
 pyyaml==6.0.3
 python-dotenv==1.2.4

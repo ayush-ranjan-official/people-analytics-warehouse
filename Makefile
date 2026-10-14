@@ -1,17 +1,19 @@
 # People-Analytics Warehouse task runner.
-# Every target loads .env through uv (values are parsed, never executed by the shell)
-# and runs inside the project's .venv, even if another virtualenv is active in the shell.
+# Targets load .env through uv when it exists (values are parsed, never executed by the shell);
+# in CI the same settings come from the job's environment. Everything runs in the project's
+# .venv, even if another virtualenv is active in the shell.
 
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
 ENV_FILE ?= .env
-RUN      := VIRTUAL_ENV=$(CURDIR)/.venv uv run --no-project --env-file $(ENV_FILE) --
+ENV_FLAG := $(if $(wildcard $(ENV_FILE)),--env-file $(ENV_FILE))
+RUN      := VIRTUAL_ENV=$(CURDIR)/.venv uv run --no-project $(ENV_FLAG) --
 DBT_DIRS := --project-dir dbt --profiles-dir dbt
 TARGET   ?= dev
 
 .PHONY: help setup check check-env check-gcp check-dbt check-postgres setup-gcp \
-        generate load simulate-day dbt-build validate-lookml eval docs
+        generate load simulate-day check-data dbt-build validate-lookml eval docs
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -22,7 +24,7 @@ setup: ## Create .venv (Python 3.12) and install pinned requirements
 	uv pip install --python .venv/bin/python -r requirements.txt
 
 check-env:
-	@test -f $(ENV_FILE) || { echo "Missing $(ENV_FILE): copy .env.example to .env and fill it in."; exit 1; }
+	@test -f $(ENV_FILE) || test -n "$$CI" || { echo "Missing $(ENV_FILE): copy .env.example to .env and fill it in."; exit 1; }
 
 setup-gcp: check-env ## One-time GCP setup: sandbox project (no billing), service account + key, datasets
 	$(RUN) bash scripts/setup_gcp.sh
@@ -39,15 +41,20 @@ check-postgres: check-env ## Insert and read back a row in Postgres
 check: check-gcp check-dbt check-postgres ## Phase 0 done-check
 	@echo "Phase 0 done-check passed."
 
+# ---------------------------------------------------------------- Phase 1: source data
+generate: ## Generate the synthetic HRIS + ATS history into generator/output
+	$(RUN) python -m generator.generate
+
+load: check-env ## First load into the source Postgres (refuses once Fivetran replicates it)
+	$(RUN) python -m generator.load_to_postgres
+
+simulate-day: check-env ## Apply the next business day of hires, moves and exits (DAYS=n for more)
+	$(RUN) python -m generator.load_to_postgres --simulate-day --days $(or $(DAYS),1)
+
+check-data: check-env ## Phase 1 done-check: row counts, FTEs on the last day, planted issues
+	$(RUN) python -m generator.verify
+
 # ---------------------------------------------------------------- Later phases
-generate: ## (Phase 1) Generate synthetic HR history
-	@echo "Not implemented yet: Phase 1"; exit 1
-
-load: ## (Phase 1) Create tables and bulk-load Postgres
-	@echo "Not implemented yet: Phase 1"; exit 1
-
-simulate-day: ## (Phase 1) Apply one day of hires, moves and exits
-	@echo "Not implemented yet: Phase 1"; exit 1
 
 dbt-build: check-env ## (Phase 3) dbt build; TARGET=prod for production
 	@echo "Not implemented yet: Phase 3"; exit 1

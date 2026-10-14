@@ -116,3 +116,23 @@ Looker has no free self-serve tier for your own data. So:
 The eval (Phase 8) sends each question to Claude in a fresh, tool-less session through the Claude Code
 CLI, which runs on a subscription instead of per-call API billing. `ANTHROPIC_API_KEY` is left unset:
 if it were present, the CLI would switch to API billing.
+
+## D9. The source data is a deterministic simulation that can be cut at any date
+*2026-10-14*
+
+**Decision.** `generator/` simulates the company day by day. Every random draw is seeded by what it
+is about (a day, a requisition, a person), so simulating further never changes the past. The same
+code produces the initial history (`make generate`, `make load`) and each new day of changes
+(`make simulate-day`): it simulates to the next date, compares with the day before, and writes only
+the differences.
+
+**Why.** The pipeline needs a source that keeps changing like a live HRIS, so incremental syncs,
+freshness checks and drift drills are real. It must also be reproducible: the CSVs carry SHA-256
+checksums, and `simulate-day` refuses to run if the config, numpy or Faker version no longer matches
+what was loaded, rather than silently mixing two histories.
+
+**Source-system realism.**
+- Tables have primary keys (needed for replication) but no foreign keys or check constraints, like
+  many real source systems.
+- Known data-quality problems are planted deliberately (`generator/PLANTED_ISSUES.md`) so the
+  warehouse tests catch real issues at the source.

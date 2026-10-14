@@ -12,7 +12,7 @@ see [docs/decisions.md](docs/decisions.md).
 ## Roadmap
 
 - [x] **Phase 0:** repo, BigQuery sandbox project, connection checks
-- [ ] **Phase 1:** synthetic HRIS/ATS generator for "Nodewell Labs", loaded into Postgres
+- [x] **Phase 1:** synthetic HRIS/ATS generator for "Nodewell Labs", loaded into Postgres
 - [ ] **Phase 2:** Fivetran sync into a Postgres landing database, batch-loaded into BigQuery
 - [ ] **Phase 3:** dbt staging, SCD2 employee history, star schema marts, tests
 - [ ] **Phase 4:** model and column docs, metric definitions, schema context for LLMs
@@ -28,7 +28,12 @@ see [docs/decisions.md](docs/decisions.md).
 make setup             # Python 3.12 venv + pinned requirements
 cp .env.example .env   # then fill in your own values (never commit .env)
 make setup-gcp         # one-time: BigQuery sandbox project (no billing), service account, datasets
-make check             # Phase 0 done-check: GCP key guard, dbt debug, Postgres insert
+make check             # GCP key guard, dbt debug, Postgres insert
+
+make generate          # synthetic HRIS + ATS history -> generator/output/*.csv
+make load              # first load into the source Postgres (schema hris)
+make check-data        # row counts, FTE headcount, planted data-quality issues
+make simulate-day      # one more business day of hires, moves and exits
 ```
 
 Run `make help` for all targets.

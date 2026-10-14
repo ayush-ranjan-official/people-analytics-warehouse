@@ -1,0 +1,150 @@
+# Synthetic HRIS + ATS for "Nodewell Labs". Same seed + same numpy and Faker versions = same data.
+seed: 20231001
+
+company:
+  name: Nodewell Labs
+  email_domain: nodewell.example     # .example is reserved, so no real mailbox can match
+  founded: 2018-03-01                 # earliest possible hire date for the opening population
+  history_start: 2023-10-01
+  history_end: 2026-09-30
+  initial_fte: 350                    # FTEs employed on history_start
+  target_fte_at_end: 600              # FTEs employed on history_end (approximately)
+  growth_after_end_annual: 0.05       # keeps simulate-day hiring after history_end
+  contractor_share_of_fte: 0.05
+  ceo_department: D11
+  ceo_title: Chief Executive Officer
+
+# Two-level org. Employees sit in leaf departments; parents only hold their head.
+departments:
+  - {id: D01, name: Engineering,            parent: null, cost_center: CC-1000, weight: 0, head_title: VP Engineering}
+  - {id: D02, name: Engineering - Platform, parent: D01,  cost_center: CC-1010, weight: 0.17}
+  - {id: D03, name: Engineering - Data,     parent: D01,  cost_center: CC-1020, weight: 0.12}
+  - {id: D04, name: Engineering - Security, parent: D01,  cost_center: CC-1030, weight: 0.06}
+  - {id: D05, name: Product,                parent: null, cost_center: CC-2000, weight: 0.09}
+  - {id: D06, name: Sales,                  parent: null, cost_center: CC-3000, weight: 0.20}
+  - {id: D07, name: Marketing,              parent: null, cost_center: CC-4000, weight: 0.09}
+  - {id: D08, name: People,                 parent: null, cost_center: CC-5000, weight: 0.05}
+  - {id: D09, name: Finance,                parent: null, cost_center: CC-6000, weight: 0.06}
+  - {id: D10, name: Legal,                  parent: null, cost_center: CC-7000, weight: 0.03}
+  - {id: D11, name: Operations,             parent: null, cost_center: CC-8000, weight: 0.13}
+
+# Job family per department, used for titles.
+roles:
+  D02: Software Engineer
+  D03: Data Engineer
+  D04: Security Engineer
+  D05: Product Manager
+  D06: Account Executive
+  D07: Marketing Specialist
+  D08: People Partner
+  D09: Financial Analyst
+  D10: Counsel
+  D11: Operations Specialist
+
+levels:
+  # share: level mix of hires and of the opening population
+  # base_usd: midpoint of the annual salary band in New York; other locations scale from it
+  L1: {title: Associate,  share: 0.14, base_usd: 70000}
+  L2: {title: "",         share: 0.30, base_usd: 95000}
+  L3: {title: Senior,     share: 0.27, base_usd: 125000}
+  L4: {title: Staff,      share: 0.15, base_usd: 160000}
+  L5: {title: Manager,    share: 0.09, base_usd: 195000}
+  L6: {title: Director,   share: 0.04, base_usd: 245000}
+  L7: {title: VP,         share: 0.01, base_usd: 310000}
+band_spread: 0.15                     # salaries are drawn within +/-15% of the band midpoint
+
+locations:
+  # pay: salary level relative to New York; fx: local currency per USD
+  Bengaluru:  {currency: INR, pay: 0.33, fx: 83.0, share: 0.40, faker_locale: en_IN}
+  Singapore:  {currency: SGD, pay: 0.75, fx: 1.34, share: 0.12, faker_locale: en_US}
+  London:     {currency: GBP, pay: 0.80, fx: 0.79, share: 0.16, faker_locale: en_GB}
+  New York:   {currency: USD, pay: 1.00, fx: 1.00, share: 0.20, faker_locale: en_US}
+  Remote:     {currency: USD, pay: 0.70, fx: 1.00, share: 0.12, faker_locale: en_US}
+
+attrition:
+  # Base rate before the first-year multiplier. With ~30% of staff in their first year
+  # (the company is growing), overall voluntary attrition lands near 12%.
+  voluntary_annual_base: 0.094
+  involuntary_annual: 0.03
+  retirement_annual: 0.004
+  retirement_min_service_years: 5
+  first_year_multiplier: 1.7          # voluntary exit risk in the first 12 months of tenure
+  level_multiplier: {1: 1.25, 2: 1.15, 3: 1.0, 4: 0.9, 5: 0.7, 6: 0.6, 7: 0.5}   # seniors leave less
+  # Voluntary exits by month (normalised to an average of 1): bonuses pay out in March,
+  # so resignations spike in April.
+  monthly_seasonality: {1: 1.0, 2: 0.9, 3: 1.2, 4: 1.9, 5: 1.2, 6: 0.9, 7: 0.9, 8: 0.9, 9: 0.9, 10: 0.9, 11: 0.8, 12: 0.7}
+  regretted_share_of_voluntary: 0.35
+  backfill_probability: 0.75          # share of FTE exits whose position is re-opened
+  reasons:
+    V: {VOL_BETTER_OPPORTUNITY: 0.35, VOL_COMPENSATION: 0.20, VOL_CAREER_CHANGE: 0.15, VOL_RELOCATION: 0.10, VOL_PERSONAL: 0.12, VOL_MANAGER: 0.08}
+    I: {INV_PERFORMANCE: 0.60, INV_MISCONDUCT: 0.15, INV_RESTRUCTURING: 0.25}
+    R: {RET_RETIREMENT: 1.0}
+
+movement:
+  promotion_annual: 0.15              # applied in two cycles a year
+  promotion_level_multiplier: {1: 1.6, 2: 1.4, 3: 0.65, 4: 0.4, 5: 0.25}  # fewer seats higher up
+  promotion_cycle_months: [4, 10]
+  promotion_raise: [0.08, 0.15]
+  min_months_in_level_for_promotion: 12
+  merit_month: 4
+  merit_raise: [0.02, 0.07]           # scaled by position in band: more below the midpoint, less above
+  # Deliberate moves: ~8% of people change department or manager in a year. When a manager
+  # leaves, their reports are reassigned on top of this (structural changes).
+  transfer_annual: 0.04               # change of department
+  transfer_location_change_probability: 0.10
+  manager_change_annual: 0.04         # reorgs within a department
+  rehire_share_of_hires: 0.01
+  rehire_min_months_away: 6
+  name_change_annual: 0.005           # e.g. marriage: last name + email change in place
+  # Off-cycle changes processed by HR operations: equity adjustments that move clearly underpaid
+  # people toward their band midpoint (after six months, at most once a year), and occasional
+  # relocations. No raise goes past the band maximum.
+  off_cycle_changes_per_day: 0.5
+  equity_adjustment_below_compa: 0.92
+  off_cycle_relocation_share: 0.03
+  off_cycle_raise: [0.02, 0.06]
+
+contractors:
+  contract_months: [6, 18]
+  levels: [2, 3, 4]
+
+interns:
+  per_summer: 10                      # requisitions open on 1 Feb; interns start early June, finish end of August
+  departments: [D02, D03, D05, D07]
+  locations: [Bengaluru, London, New York]
+
+recruiting:
+  max_senior_share: 0.2               # no new L5+ requisitions once a department is this senior
+  planning_lookahead_days: 75         # requisitions open this far ahead of the headcount plan
+  time_to_fill_days_median: 38        # requisition opened -> offer accepted
+  time_to_fill_sigma: 0.45
+  start_delay_days: [14, 45]          # offer accepted -> first day (moved to the next Monday)
+  cancel_probability: 0.05
+  # Funnel: ~100 applied -> 25 screened -> 8 interviewed -> 2 offered -> 1.5 hired.
+  # The offer rate follows from the others: one hire per filled requisition, and declined
+  # offers = hires x (1 / offer_acceptance - 1). Applicants stop moving when the requisition
+  # closes, and offer_before_close_share compensates for the offers that cuts off.
+  applicants_per_hire: 67
+  stage_conversion: {screen: 0.24, interview: 0.32}   # for applicants other than the eventual hire
+  offer_acceptance: 0.75
+  offer_before_close_share: 0.69      # share of other applicants' offers that land before the requisition closes
+  stage_days: {screen: [2, 8], interview: [4, 12], offer: [5, 15], decision: [2, 7]}
+  repeat_candidate_share: 0.08        # candidates who apply to more than one requisition
+  withdraw_share: 0.12                # of rejected-or-withdrawn applicants, the share who withdraw
+  cleanup_days_after_fill: 7          # open applications are closed out within a week of a fill
+  sources:
+    # share of applicants, and relative odds of passing the screen
+    Referral:     {share: 0.10, quality: 2.2}
+    LinkedIn:     {share: 0.32, quality: 1.0}
+    Careers Site: {share: 0.30, quality: 0.9}
+    Agency:       {share: 0.08, quality: 1.6}
+    Job Board:    {share: 0.20, quality: 0.6}
+
+# Known data-quality problems, planted on purpose so the warehouse tests have something real
+# to catch. Set enabled: false to fix them at the source.
+planted_issues:
+  enabled: true
+  department_name_typos: 3            # "Engineering - X" typed as "Engg - X"
+  duplicate_applications: 5           # double-submitted applications (same candidate, req, day)
+  inverted_job_history: 2             # effective_to keyed in a year too early
+  orphan_terminations: 4              # exit records whose employee_id doesn't exist
