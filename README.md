@@ -20,6 +20,8 @@ see [docs/decisions.md](docs/decisions.md).
 - [ ] **Phase 4:** model and column docs, metric definitions, schema context for LLMs
 - [ ] **Phase 5:** LookML semantic layer and Data Studio dashboards
 - [ ] **Phase 6:** schema-drift and sync-failure drills, with runbooks
+      (all five drills built and run against the source; the sync-failure drills still need the
+      live Fivetran connection to time the alerts)
 - [ ] **Phase 7:** Visier-style migration inventory and metric reconciliation
 - [ ] **Phase 8:** text-to-SQL evaluation, bare schema vs documented schema
 - [ ] **Phase 9:** architecture diagrams and demo
@@ -54,3 +56,6 @@ Settings > Secrets and variables > Actions:
   `LANDING_POSTGRES_URL`;
 - variable `INGEST_SOURCE`: `direct` until the Fivetran connection is live, then `fivetran`;
 - optional variable `PAUSE_SIMULATION` = `true` to stop the source moving (for example before a demo).
+
+When something breaks, see the [schema drift](docs/runbook-schema-drift.md) and
+[sync failure](docs/runbook-sync-failure.md) runbooks.

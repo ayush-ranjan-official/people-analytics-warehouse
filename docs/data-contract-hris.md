@@ -135,4 +135,5 @@ Types are BigQuery types as landed. Every table also carries `_fivetran_deleted`
 ## Changing the contract
 
 Update `_sources.yml` (the breaking and additive tests share one list per table), the staging model,
-any mart and LookML view that exposes the column, and this page, in the same pull request.
+any mart and LookML view that exposes the column, and this page, in the same pull request. The
+[schema drift runbook](runbook-schema-drift.md) walks through each kind of change.

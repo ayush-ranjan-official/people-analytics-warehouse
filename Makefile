@@ -16,7 +16,7 @@ TARGET   ?= dev
 .PHONY: help setup check check-env check-gcp check-dbt check-postgres setup-gcp \
         generate load simulate-day backfill-source check-data fix-source \
         setup-replication ingest check-ingestion \
-        dbt-build dbt-nightly freshness storage-report validate-lookml eval docs
+        dbt-build dbt-nightly freshness storage-report drill validate-lookml eval docs
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -91,6 +91,12 @@ freshness: check-env ## dbt source freshness (warn/error thresholds per table)
 
 storage-report: check-env ## Bytes written vs the BigQuery sandbox's 10 GiB lifetime allowance (RECORD=1 saves to the ledger)
 	$(RUN) python scripts/storage_report.py $(if $(RECORD),--record)
+
+# ---------------------------------------------------------------- Phase 6: drills
+DRILLS := drift_add_column drift_rename_column drift_type_change fail_credentials fail_permissions
+drill: check-env ## Break the source on purpose: NAME=<drill>, REVERT=1 undoes it (docs/runbook-*.md)
+	@test -n "$(NAME)" && test -n "$(filter $(NAME),$(DRILLS))" || { echo "NAME must be one of: $(DRILLS)"; exit 1; }
+	$(RUN) python -m simulations.$(NAME) $(if $(REVERT),--revert)
 
 # ---------------------------------------------------------------- Later phases
 
