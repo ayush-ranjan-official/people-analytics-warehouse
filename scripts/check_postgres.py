@@ -1,7 +1,8 @@
-"""Phase 0 done-check: prove we can connect to the source Postgres and write to it.
+"""Prove we can connect to the source and landing Postgres databases and write to them.
 
-Creates a scratch table, inserts one row, reads it back, then drops the table.
-Reads POSTGRES_URL from the environment (or .env when run directly).
+For each one: creates a scratch table, inserts a row, reads it back, then drops the table.
+Reads POSTGRES_URL (source) and LANDING_POSTGRES_URL (Fivetran's landing database) from the
+environment, or from .env when run directly. The landing database is optional until Phase 2.
 """
 
 import os
@@ -13,7 +14,8 @@ from dotenv import load_dotenv
 from psycopg.conninfo import conninfo_to_dict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-SCRATCH_TABLE = "public._phase0_connection_check"
+SCRATCH_TABLE = "public._connection_check"
+DATABASES = [("POSTGRES_URL", "source", True), ("LANDING_POSTGRES_URL", "landing", False)]
 
 
 def describe(params: dict) -> str:
@@ -21,38 +23,41 @@ def describe(params: dict) -> str:
     return f"{params.get('user')}@{params.get('host')}/{params.get('dbname')}"
 
 
-def main() -> int:
-    load_dotenv(REPO_ROOT / ".env")
-    url = os.environ.get("POSTGRES_URL", "")
-    if not url or "USER:PASSWORD@HOST" in url:
-        print("POSTGRES_URL is not set in .env")
-        return 1
-
+def check(var: str, label: str) -> bool:
+    url = os.environ[var]
     # Parses both URL and key=value forms, the same way libpq will.
     params = conninfo_to_dict(url)
     if "-pooler" in str(params.get("host", "")):
-        print(f"POSTGRES_URL uses Neon's pooled host ({params['host']}). Use the direct host "
-              "(drop '-pooler' from the hostname): Fivetran's logical replication needs it.")
-        return 1
+        print(f"{label}: {var} uses Neon's pooled host ({params['host']}). Use the direct host "
+              "(drop '-pooler' from the hostname): Fivetran needs it.")
+        return False
 
-    print(f"Connecting to {describe(params)}")
     # One transaction: committed on success, rolled back on any error, so nothing is left behind.
     with psycopg.connect(url, connect_timeout=15) as conn:
         version = conn.execute("show server_version").fetchone()[0]
-        user, db = conn.execute("select current_user, current_database()").fetchone()
-        print(f"Connected: Postgres {version}, user={user}, database={db}")
-
-        conn.execute(
-            f"create table {SCRATCH_TABLE} "
-            "(id serial primary key, note text not null, inserted_at timestamptz not null default now())"
-        )
-        conn.execute(f"insert into {SCRATCH_TABLE} (note) values (%s)", ("phase 0 check",))
-        row = conn.execute(f"select id, note, inserted_at from {SCRATCH_TABLE}").fetchone()
-        print(f"Inserted and read back: id={row[0]}, note={row[1]!r}, inserted_at={row[2]:%Y-%m-%d %H:%M:%S %Z}")
+        conn.execute(f"create table {SCRATCH_TABLE} (id int primary key, inserted_at timestamptz default now())")
+        conn.execute(f"insert into {SCRATCH_TABLE} (id) values (1)")
+        inserted_at = conn.execute(f"select inserted_at from {SCRATCH_TABLE}").fetchone()[0]
         conn.execute(f"drop table {SCRATCH_TABLE}")
+    print(f"{label}: {describe(params)}, Postgres {version}, wrote and read a row at {inserted_at:%H:%M:%S %Z}")
+    return True
 
-    print("Postgres check passed (scratch table dropped).")
-    return 0
+
+def main() -> int:
+    load_dotenv(REPO_ROOT / ".env")
+    ok = True
+    for var, label, required in DATABASES:
+        url = os.environ.get(var, "")
+        if not url or "USER:PASSWORD@HOST" in url:
+            if required:
+                print(f"{label}: {var} is not set")
+                ok = False
+            else:
+                print(f"{label}: {var} not set yet (skipped)")
+            continue
+        ok = check(var, label) and ok
+    print("Postgres check passed." if ok else "Postgres check failed.")
+    return 0 if ok else 1
 
 
 if __name__ == "__main__":

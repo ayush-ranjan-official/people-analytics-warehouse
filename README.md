@@ -14,6 +14,8 @@ see [docs/decisions.md](docs/decisions.md).
 - [x] **Phase 0:** repo, BigQuery sandbox project, connection checks
 - [x] **Phase 1:** synthetic HRIS/ATS generator for "Nodewell Labs", loaded into Postgres
 - [ ] **Phase 2:** Fivetran sync into a Postgres landing database, batch-loaded into BigQuery
+      (loader and checks done; the Fivetran connection isn't live yet, so BigQuery is loaded with
+      `make ingest SOURCE=direct` in the meantime)
 - [ ] **Phase 3:** dbt staging, SCD2 employee history, star schema marts, tests
 - [ ] **Phase 4:** model and column docs, metric definitions, schema context for LLMs
 - [ ] **Phase 5:** LookML semantic layer and Data Studio dashboards

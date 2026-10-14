@@ -8,12 +8,14 @@ SHELL := /bin/bash
 
 ENV_FILE ?= .env
 ENV_FLAG := $(if $(wildcard $(ENV_FILE)),--env-file $(ENV_FILE))
-RUN      := VIRTUAL_ENV=$(CURDIR)/.venv uv run --no-project $(ENV_FLAG) --
+# The env-file check runs first: on a malformed line uv would quote the line, i.e. print a secret.
+RUN      := python3 scripts/check_env_file.py $(ENV_FILE) && VIRTUAL_ENV=$(CURDIR)/.venv uv run --no-project $(ENV_FLAG) --
 DBT_DIRS := --project-dir dbt --profiles-dir dbt
 TARGET   ?= dev
 
 .PHONY: help setup check check-env check-gcp check-dbt check-postgres setup-gcp \
-        generate load simulate-day check-data dbt-build validate-lookml eval docs
+        generate load simulate-day check-data \
+        setup-replication ingest check-ingestion dbt-build validate-lookml eval docs
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -53,6 +55,16 @@ simulate-day: check-env ## Apply the next business day of hires, moves and exits
 
 check-data: check-env ## Phase 1 done-check: row counts, FTEs on the last day, planted issues
 	$(RUN) python -m generator.verify
+
+# ---------------------------------------------------------------- Phase 2: ingestion
+setup-replication: check-env ## Grants + publication for Fivetran (SLOT=1 also creates the replication slot)
+	$(RUN) python -m ingestion.setup_replication $(if $(SLOT),--slot)
+
+ingest: check-env ## Copy landing data into BigQuery raw_hris (ALL=1 reloads all; SOURCE=direct bootstraps from the source)
+	$(RUN) python -m ingestion.load_to_bigquery $(if $(ALL),--all) $(if $(SOURCE),--source $(SOURCE))
+
+check-ingestion: check-env ## Compare source -> landing -> BigQuery (SOURCE=direct for bootstrap loads)
+	$(RUN) python -m ingestion.check_ingestion $(if $(SOURCE),--source $(SOURCE))
 
 # ---------------------------------------------------------------- Later phases
 

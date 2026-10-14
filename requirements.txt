@@ -13,5 +13,8 @@ pandas==3.0.6
 pyyaml==6.0.3
 python-dotenv==1.2.4
 
+# Ingestion: landing Postgres -> BigQuery batch loads (Parquet)
+pyarrow==26.0.0
+
 # Semantic layer: LookML parser for offline validation (Phase 5)
 lkml==1.3.7

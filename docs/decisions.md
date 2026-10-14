@@ -48,6 +48,12 @@ production the extra hop goes away by pointing Fivetran's destination at BigQuer
 **Trade-off.** One extra step to run and monitor. Freshness is measured on `_fivetran_synced`, so a
 stuck loader shows up as stale data, just like a stuck Fivetran sync would.
 
+**Bootstrap mode.** `make ingest SOURCE=direct` copies the source tables straight into `raw_hris`,
+adding the two Fivetran columns itself (nothing deleted; synced = load time). It exists so the
+warehouse can be built and tested before the Fivetran connection is live. Every BigQuery table is
+labelled with its origin (`load_source = direct` or `fivetran`), and switching back to Fivetran
+reloads every table.
+
 ## D3. Source system: free Neon Postgres, not Google Sheets
 *2026-10-14*
 
@@ -72,9 +78,12 @@ called `hris`.
 - **dbt, the loader and the checks** use BigQuery service account `dbt-bigquery`, with BigQuery Data Editor
   and Job User only. Its key lives outside the repo (permissions 600). The dbt profile authenticates only
   with that key, never with a personal Google login.
-- **Fivetran** gets a dedicated login on the source (replication only) and another on the landing database.
-  The Phase 6 "rotate the credential" and "stop one table" drills then break Fivetran without breaking
-  anything else.
+- **Fivetran** gets a dedicated `fivetran` login on the source and another on the landing database, so
+  the Phase 6 "rotate the credential" and "stop one table" drills break Fivetran without breaking anything
+  else. They are separate logins, but not least-privilege: on Neon, only roles created in the console can
+  have REPLICATION, and those roles are members of `neon_superuser` (which can read every table). That's
+  why the "stop one table" drill removes the table from the replication publication instead of revoking
+  SELECT. In production the source login would be a replication-only role.
 - **gcloud setup** runs as the personal account, in a gcloud configuration used only by this repo.
 
 ## D5. dbt Core 1.12 + dbt-bigquery, not the new `dbt` package
