@@ -1,0 +1,27 @@
+name: people_analytics
+version: "0.1.0"
+config-version: 2
+profile: people_analytics
+
+require-dbt-version: [">=1.10.0", "<2.0.0"]
+
+model-paths: ["models"]
+analysis-paths: ["analyses"]
+test-paths: ["tests"]
+seed-paths: ["seeds"]
+macro-paths: ["macros"]
+snapshot-paths: ["snapshots"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+# Materialization is set per folder, so individual models only override when needed.
+models:
+  people_analytics:
+    staging:
+      +materialized: view
+    intermediate:
+      +materialized: ephemeral
+    marts:
+      +materialized: table

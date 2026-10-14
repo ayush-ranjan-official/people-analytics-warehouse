@@ -1,0 +1,16 @@
+# Python 3.12 (see .python-version). Install with: make setup
+# Top-level dependencies, pinned to exact versions for reproducibility.
+
+# Transform: dbt Core + BigQuery adapter
+dbt-core==1.12.5
+dbt-bigquery==1.12.1
+
+# Source system: synthetic data generator + Postgres loader
+psycopg[binary]==3.3.6
+faker==40.43.0
+pandas==3.0.6
+pyyaml==6.0.3
+python-dotenv==1.2.4
+
+# Semantic layer: LookML parser for offline validation (Phase 5)
+lkml==1.3.7

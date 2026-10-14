@@ -1,0 +1,33 @@
+# Committed on purpose: it holds no secrets. Every value comes from the
+# environment (.env locally, repository secrets in GitHub Actions).
+# Auth is always the service-account key file; never `oauth`, which would
+# pick up whatever gcloud login happens to be active on the machine.
+people_analytics:
+  target: dev
+  outputs:
+    dev:
+      type: bigquery
+      method: service-account
+      keyfile: "{{ env_var('BQ_KEYFILE') }}"
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: "{{ env_var('BQ_DATASET_DEV', 'dbt_dev') }}"
+      location: "{{ env_var('BQ_LOCATION', 'asia-south1') }}"
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 300
+      job_retries: 1
+      # Cost guard: any single query that would scan more than 1 GB fails instead of running.
+      maximum_bytes_billed: 1000000000
+
+    prod:
+      type: bigquery
+      method: service-account
+      keyfile: "{{ env_var('BQ_KEYFILE') }}"
+      project: "{{ env_var('GCP_PROJECT_ID') }}"
+      dataset: "{{ env_var('BQ_DATASET_PROD', 'analytics') }}"
+      location: "{{ env_var('BQ_LOCATION', 'asia-south1') }}"
+      threads: 4
+      priority: interactive
+      job_execution_timeout_seconds: 300
+      job_retries: 1
+      maximum_bytes_billed: 1000000000

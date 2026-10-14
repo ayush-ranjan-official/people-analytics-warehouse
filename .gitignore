@@ -1,0 +1,36 @@
+# --- Secrets: never commit ---
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*-key.json
+*_key.json
+*sa-key*.json
+service-account*.json
+credentials*.json
+# Cloud Console's default key download name: <project-id>-<12 hex chars>.json
+*-[0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f].json
+
+# --- Python ---
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+
+# --- dbt ---
+dbt/target/
+dbt/dbt_packages/
+dbt/logs/
+dbt/.user.yml
+logs/
+
+# --- Generated data (rebuilt from generator/config.yaml + seed) ---
+data/
+generator/output/
+
+# --- OS / editor ---
+.DS_Store
+.idea/
+.vscode/
