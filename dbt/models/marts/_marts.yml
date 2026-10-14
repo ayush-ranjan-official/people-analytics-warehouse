@@ -1,0 +1,173 @@
+version: 2
+
+models:
+  - name: dim_date
+    description: Calendar days 2023-01-01 to 2027-12-31.
+    columns:
+      - name: date_day
+        data_tests: [unique, not_null]
+
+  - name: dim_org
+    description: Departments with corrected names, parent department and cost centre.
+    columns:
+      - name: department_id
+        data_tests: [unique, not_null]
+      - name: department_name
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [Engineering, Engineering - Platform, Engineering - Data, Engineering - Security,
+                         Product, Sales, Marketing, People, Finance, Legal, Operations]
+
+  - name: dim_employee
+    description: One row per employee per job-history version.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "valid_from <= valid_to"
+    columns:
+      - name: employee_key
+        data_tests: [unique, not_null]
+      - name: employee_id
+        data_tests: [not_null]
+      - name: valid_from
+        data_tests: [not_null]
+      - name: valid_to
+        data_tests: [not_null]
+      - name: employment_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [fte, contractor, intern]
+      - name: department_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_org')
+                field: department_id
+      - name: location
+        data_tests: [not_null]
+      - name: job_level
+        data_tests: [not_null]
+
+  - name: fct_headcount_daily
+    description: One row per employee per day employed.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [snapshot_date, employee_id]
+    columns:
+      - name: employee_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_employee')
+                field: employee_key
+      - name: snapshot_date
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
+      - name: department_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_org')
+                field: department_id
+
+  - name: fct_hires
+    description: One row per FTE hire event.
+    columns:
+      - name: hire_key
+        data_tests: [unique, not_null]
+      - name: employee_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_employee')
+                field: employee_key
+      - name: req_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fct_requisitions')
+                field: req_id
+
+  - name: fct_terminations
+    description: One row per FTE exit event.
+    data_tests:
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "(termination_type = 'voluntary') = (regretted_flag is not null)"
+    columns:
+      - name: termination_key
+        data_tests: [unique, not_null]
+      - name: employee_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_employee')
+                field: employee_key
+      - name: termination_type
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [voluntary, involuntary, retirement]
+
+  - name: fct_requisitions
+    description: One row per requisition.
+    columns:
+      - name: req_id
+        data_tests: [unique, not_null]
+      - name: requisition_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [open, filled, cancelled]
+      - name: employment_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [fte, contractor, intern]
+      - name: department_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_org')
+                field: department_id
+
+  - name: fct_application_funnel
+    description: One row per application, with stage timestamps.
+    columns:
+      - name: application_id
+        data_tests: [unique, not_null]
+      - name: req_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('fct_requisitions')
+                field: req_id
+      - name: current_stage
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [applied, screen, interview, offer, hired, rejected, withdrawn, offer_declined]
+
+  - name: snap_employees
+    description: SCD Type 2 history of employee records (self-rebuilding; the sandbox blocks dbt snapshots).
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [employee_id, valid_from]
+      - dbt_utils.expression_is_true:
+          arguments:
+            expression: "valid_from < valid_to"
+          config:
+            where: "valid_to is not null"

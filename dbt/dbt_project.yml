@@ -3,25 +3,44 @@ version: "0.1.0"
 config-version: 2
 profile: people_analytics
 
-require-dbt-version: [">=1.10.0", "<2.0.0"]
+require-dbt-version: [">=1.12.0", "<2.0.0"]
 
 model-paths: ["models"]
 analysis-paths: ["analyses"]
 test-paths: ["tests"]
 seed-paths: ["seeds"]
 macro-paths: ["macros"]
-snapshot-paths: ["snapshots"]
 
 clean-targets:
   - "target"
   - "dbt_packages"
 
-# Materialization is set per folder, so individual models only override when needed.
+flags:
+  send_anonymous_usage_stats: false
+
+vars:
+  # Headcount is reported from the start of the source history; earlier exits aren't in the extract.
+  history_start_date: "2023-10-01"
+  "dbt_date:time_zone": "UTC"
+
+# Materialization is set per folder, so individual models only override when needed. Nothing here is
+# date-partitioned: the BigQuery sandbox drops date partitions older than 60 days.
 models:
   people_analytics:
+    +persist_docs:
+      relation: true
+      columns: true
     staging:
       +materialized: view
     intermediate:
-      +materialized: ephemeral
+      +materialized: view
+    history:
+      +materialized: table
     marts:
       +materialized: table
+
+seeds:
+  people_analytics:
+    +persist_docs:
+      relation: true
+      columns: true

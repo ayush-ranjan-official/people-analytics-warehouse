@@ -44,7 +44,7 @@ COLUMNS = {
     "hris_terminations": ["termination_id", "employee_id", "termination_date", "termination_type",
                           "reason_code", "regretted_flag"],
     "ats_requisitions": ["req_id", "position_id", "department_id", "hiring_manager_id", "opened_date",
-                         "closed_date", "status"],
+                         "closed_date", "status", "employment_type"],
     "ats_applications": ["application_id", "req_id", "candidate_id", "source", "applied_date",
                          "current_stage", "stage_updated_at", "hired_employee_id"],
     "ats_application_stages": ["stage_event_id", "application_id", "stage", "entered_at"],
@@ -266,7 +266,7 @@ def main() -> int:
     (args.out / "meta.json").write_text(json.dumps(
         {"as_of": as_of.isoformat(), "seed": cfg["seed"], "fingerprint": fingerprint(cfg),
          "rows": {t: len(r) for t, r in tables.items()}, "sha256": checksums}, indent=2) + "\n")
-    if as_of == cfg["company"]["history_end"]:
+    if planted and as_of == cfg["company"]["history_end"]:
         write_report(planted, HERE / "PLANTED_ISSUES.md", as_of)
 
     print(f"{cfg['company']['name']} data as of {as_of} -> {args.out}")

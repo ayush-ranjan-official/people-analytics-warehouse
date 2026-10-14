@@ -92,6 +92,10 @@ create table if not exists hris.ats_application_stages (
 -- Added after the first load: when a seat is eliminated (vacated and not backfilled).
 alter table hris.hris_positions add column if not exists closed_date date;
 
+-- Added after the first load: whether an opening is for an FTE, a contractor or an intern. Existing
+-- rows are filled with `make backfill-source COLUMN=ats_requisitions.employment_type`.
+alter table hris.ats_requisitions add column if not exists employment_type text;
+
 -- Simulator bookkeeping (the business date reached by --simulate-day). Kept out of `hris`
 -- so it's never replicated.
 create schema if not exists sim;

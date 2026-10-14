@@ -17,12 +17,16 @@ note says where it came from: **tested** here, from the official **docs**, or **
 | **Date-partitioned tables drop every partition older than 60 days on creation.** 1,000 days loaded, 43 kept. | tested |
 | Setting `partition_expiration_days` above 60 is rejected: "must be less than 60 days while in sandbox mode" | tested |
 | Integer-range partitioning (e.g. on yyyymm) and unpartitioned clustered tables keep all historical rows | tested |
+| Views in a sandbox dataset expire after 60 days too, so `dbt run` must recreate them | tested |
+| `INFORMATION_SCHEMA.TABLE_STORAGE` needs a project option an admin must enable; table metadata (`num_bytes`) gives the same sizes with no extra permission | tested |
+| dbt table models, seeds (load jobs), tests, `persist_docs`, source freshness and `dbt show` all work in the sandbox | tested |
 | Storage: "a lifetime limit of 10 GiB … not refunded upon data deletion" | [docs](https://docs.cloud.google.com/bigquery/docs/sandbox) |
 | Query processing: 1 TiB per month | docs |
 | Not supported: streaming, DML, Data Transfer Service | docs |
 | Fivetran: "Fivetran doesn't support BigQuery sandbox accounts"; its setup test checks that billing is enabled | [Fivetran docs](https://fivetran.com/docs/destinations/bigquery/setup-guide) |
 | Parquet batch loads keep types exactly: DATE (including 9999-12-31), NUMERIC, BOOL, TIMESTAMP | tested |
 | A table's expiry can be set up to 59 days ahead with a metadata update after loading | tested |
+| A service account can list its own jobs (`client.list_jobs`). Load jobs report `outputBytes`; CREATE TABLE AS SELECT jobs report rows written in the query plan's output stage | tested |
 
 Why we don't use billing at all: the Free Trial needs a payment card, and Indian sign-ups are
 **reported** to be asked for a ~₹1,000 prepayment that's refunded only when the account is closed.
@@ -77,6 +81,10 @@ Spend-cap budgets don't cover BigQuery, and budget alerts never stop spend (**do
 - `pip install dbt` installs dbt v2 (proprietary licence). We pin `dbt-core` 1.12.5. **docs**
 - In 1.12, generic test arguments go under `arguments:`. Use `metaplane/dbt_expectations`; the
   `calogica` original is unmaintained. **docs**
+- In `dbt build`, a failing test on a **source** skips every model downstream of it. `dbt run` then
+  `dbt test` doesn't. **tested**
+- Changing a model from table to view needs `--full-refresh` on that model (or dropping the table)
+  once; dbt won't replace a table with a view on its own. **tested**
 
 ## Other
 

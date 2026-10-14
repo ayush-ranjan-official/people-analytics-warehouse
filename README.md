@@ -16,7 +16,7 @@ see [docs/decisions.md](docs/decisions.md).
 - [ ] **Phase 2:** Fivetran sync into a Postgres landing database, batch-loaded into BigQuery
       (loader and checks done; the Fivetran connection isn't live yet, so BigQuery is loaded with
       `make ingest SOURCE=direct` in the meantime)
-- [ ] **Phase 3:** dbt staging, SCD2 employee history, star schema marts, tests
+- [x] **Phase 3:** dbt staging, SCD2 employee history, star schema marts, tests, nightly build
 - [ ] **Phase 4:** model and column docs, metric definitions, schema context for LLMs
 - [ ] **Phase 5:** LookML semantic layer and Data Studio dashboards
 - [ ] **Phase 6:** schema-drift and sync-failure drills, with runbooks
@@ -36,6 +36,21 @@ make generate          # synthetic HRIS + ATS history -> generator/output/*.csv
 make load              # first load into the source Postgres (schema hris)
 make check-data        # row counts, FTE headcount, planted data-quality issues
 make simulate-day      # one more business day of hires, moves and exits
+
+make ingest SOURCE=direct   # load BigQuery raw_hris (SOURCE=direct until Fivetran is live)
+make dbt-build              # dbt seeds, models and tests (TARGET=prod for the analytics dataset)
+make storage-report         # bytes written so far vs the sandbox's 10 GiB lifetime allowance
 ```
 
 Run `make help` for all targets.
+
+## Nightly run (GitHub Actions)
+
+[.github/workflows/dbt.yml](.github/workflows/dbt.yml) loads BigQuery, rebuilds the warehouse, reports
+source freshness and storage, then simulates the next HR business day. It needs, under
+Settings > Secrets and variables > Actions:
+
+- secrets `BQ_SA_KEY_JSON` (the service-account key, whole JSON), `GCP_PROJECT_ID`, `POSTGRES_URL`,
+  `LANDING_POSTGRES_URL`;
+- variable `INGEST_SOURCE`: `direct` until the Fivetran connection is live, then `fivetran`;
+- optional variable `PAUSE_SIMULATION` = `true` to stop the source moving (for example before a demo).

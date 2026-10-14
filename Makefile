@@ -14,8 +14,9 @@ DBT_DIRS := --project-dir dbt --profiles-dir dbt
 TARGET   ?= dev
 
 .PHONY: help setup check check-env check-gcp check-dbt check-postgres setup-gcp \
-        generate load simulate-day check-data \
-        setup-replication ingest check-ingestion dbt-build validate-lookml eval docs
+        generate load simulate-day backfill-source check-data fix-source \
+        setup-replication ingest check-ingestion \
+        dbt-build dbt-nightly freshness storage-report validate-lookml eval docs
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -53,6 +54,13 @@ load: check-env ## First load into the source Postgres (refuses once Fivetran re
 simulate-day: check-env ## Apply the next business day of hires, moves and exits (DAYS=n for more)
 	$(RUN) python -m generator.load_to_postgres --simulate-day --days $(or $(DAYS),1)
 
+backfill-source: check-env ## Fill a column added to the source after the first load: COLUMN=table.column
+	@test -n "$(COLUMN)" || { echo "Set COLUMN=table.column, e.g. COLUMN=ats_requisitions.employment_type"; exit 1; }
+	$(RUN) python -m generator.load_to_postgres --backfill $(COLUMN)
+
+fix-source: check-env ## Fix the planted data-quality issues in the source (APPLY=1 commits; default is a dry run)
+	$(RUN) python -m generator.fix_source $(if $(APPLY),--apply)
+
 check-data: check-env ## Phase 1 done-check: row counts, FTEs on the last day, planted issues
 	$(RUN) python -m generator.verify
 
@@ -66,10 +74,26 @@ ingest: check-env ## Copy landing data into BigQuery raw_hris (ALL=1 reloads all
 check-ingestion: check-env ## Compare source -> landing -> BigQuery (SOURCE=direct for bootstrap loads)
 	$(RUN) python -m ingestion.check_ingestion $(if $(SOURCE),--source $(SOURCE))
 
+# ---------------------------------------------------------------- Phase 3: dbt
+DBT := $(RUN) dbt
+dbt-build: check-env ## dbt deps + build (seeds, models, tests); TARGET=prod for production
+	$(DBT) deps $(DBT_DIRS) --quiet
+	$(DBT) build $(DBT_DIRS) --target $(TARGET)
+
+dbt-nightly: check-env ## Scheduled refresh: run every model (a failing test can't stop a rebuild), then test
+	$(DBT) deps $(DBT_DIRS) --quiet
+	$(DBT) seed $(DBT_DIRS) --target $(TARGET)
+	$(DBT) run $(DBT_DIRS) --target $(TARGET)
+	$(DBT) test $(DBT_DIRS) --target $(TARGET)
+
+freshness: check-env ## dbt source freshness (warn/error thresholds per table)
+	$(DBT) source freshness $(DBT_DIRS) --target $(TARGET)
+
+storage-report: check-env ## Bytes written vs the BigQuery sandbox's 10 GiB lifetime allowance (RECORD=1 saves to the ledger)
+	$(RUN) python scripts/storage_report.py $(if $(RECORD),--record)
+
 # ---------------------------------------------------------------- Later phases
 
-dbt-build: check-env ## (Phase 3) dbt build; TARGET=prod for production
-	@echo "Not implemented yet: Phase 3"; exit 1
 
 validate-lookml: ## (Phase 5) Parse and cross-check LookML files
 	@echo "Not implemented yet: Phase 5"; exit 1

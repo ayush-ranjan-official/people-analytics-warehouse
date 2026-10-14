@@ -1,0 +1,117 @@
+version: 2
+
+models:
+  - name: stg_hris__employees
+    description: Employee records from the HRIS, cleaned. One row per employee_id.
+    columns:
+      - name: employee_id
+        data_tests: [unique, not_null]
+      - name: employee_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [active, terminated]
+      - name: employment_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [fte, contractor, intern]
+      - name: email
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_match_regex:
+              arguments:
+                regex: "^[a-z0-9._%+-]+@[a-z0-9.-]+\\.[a-z]{2,}$"
+                is_raw: true
+
+  - name: stg_hris__job_history
+    description: Effective-dated job records from the HRIS. One row per job_history_id.
+    columns:
+      - name: job_history_id
+        data_tests: [unique, not_null]
+      - name: job_level
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [L1, L2, L3, L4, L5, L6, L7]
+      - name: salary_local
+        description: Annual salary in the record's currency. Contractors and interns are paid too.
+        data_tests:
+          - not_null
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 1
+                max_value: 100000000
+
+  - name: stg_hris__positions
+    description: Positions (seats) from the HRIS. One row per position_id.
+    columns:
+      - name: position_id
+        data_tests: [unique, not_null]
+
+  - name: stg_hris__departments
+    description: Departments as the HRIS stores them, names uncorrected. One row per department_id.
+    columns:
+      - name: department_id
+        data_tests: [unique, not_null]
+      - name: department_name
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [Engineering, Engineering - Platform, Engineering - Data, Engineering - Security,
+                         Product, Sales, Marketing, People, Finance, Legal, Operations]
+
+  - name: stg_hris__terminations
+    description: Exit events from the HRIS. One row per termination_id.
+    columns:
+      - name: termination_id
+        data_tests: [unique, not_null]
+      - name: termination_type
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [voluntary, involuntary, retirement]
+      - name: reason
+        data_tests: [not_null]
+
+  - name: stg_ats__requisitions
+    description: Requisitions from the ATS. One row per req_id.
+    columns:
+      - name: req_id
+        data_tests: [unique, not_null]
+      - name: requisition_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [open, filled, cancelled]
+      - name: employment_type
+        description: What the opening is for. Headcount and hiring metrics count fte only.
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [fte, contractor, intern]
+
+  - name: stg_ats__applications
+    description: Applications from the ATS, one per candidate per requisition.
+    columns:
+      - name: application_id
+        data_tests: [unique, not_null]
+      - name: current_stage
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [applied, screen, interview, offer, hired, rejected, withdrawn, offer_declined]
+
+  - name: stg_ats__application_stages
+    description: Stage history from the ATS. One row per stage_event_id.
+    columns:
+      - name: stage_event_id
+        data_tests: [unique, not_null]
+      - name: stage
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [applied, screen, interview, offer, hired, rejected, withdrawn, offer_declined]

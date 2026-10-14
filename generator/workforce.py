@@ -979,5 +979,5 @@ class Workforce:
             rows.append({"req_id": r.req_id, "position_id": r.position_id, "department_id": r.department_id,
                          "hiring_manager_id": r.hiring_manager_id, "opened_date": r.opened_date,
                          "closed_date": r.closed_date if closed else None,
-                         "status": r.outcome if closed else "Open"})
+                         "status": r.outcome if closed else "Open", "employment_type": r.employment_type})
         return rows

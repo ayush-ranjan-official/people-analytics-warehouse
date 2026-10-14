@@ -1,0 +1,12 @@
+reason_code,reason,termination_type_code
+VOL_BETTER_OPPORTUNITY,Better opportunity,V
+VOL_COMPENSATION,Compensation,V
+VOL_CAREER_CHANGE,Career change,V
+VOL_RELOCATION,Relocation,V
+VOL_PERSONAL,Personal reasons,V
+VOL_MANAGER,Relationship with manager,V
+INV_PERFORMANCE,Performance,I
+INV_MISCONDUCT,Misconduct,I
+INV_RESTRUCTURING,Restructuring,I
+RET_RETIREMENT,Retirement,R
+END_OF_TERM,End of contract or internship,I

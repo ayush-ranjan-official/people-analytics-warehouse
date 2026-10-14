@@ -8,7 +8,8 @@ import re
 import sys
 from pathlib import Path
 
-LINE = re.compile(r"""^(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=(?:'[^']*'|"(?:[^"\\]|\\.)*"|[^'"\s#][^\s#]*|)\s*(?:#.*)?$""")
+VALUE = r"""(?:'[^']*'|"(?:[^"\\]|\\.)*"|[^'"\s#][^\s#]*|)"""      # single-quoted, double-quoted, bare, or empty
+LINE = re.compile(r"^(?:export\s+)?[A-Za-z_][A-Za-z0-9_]*=" + VALUE + r"\s*(?:#.*)?$")
 
 
 def main() -> int:

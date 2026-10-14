@@ -1,0 +1,83 @@
+# Nightly pipeline: load the latest landing data into BigQuery, rebuild the warehouse, report source
+# freshness, then simulate the next HR business day so the following run has changes to pick up.
+#
+# Repository secrets: BQ_SA_KEY_JSON (the dbt service-account key, whole JSON), GCP_PROJECT_ID,
+# POSTGRES_URL, LANDING_POSTGRES_URL. Repository variables: INGEST_SOURCE (required) is "direct" until
+# the Fivetran connection is live, then "fivetran"; PAUSE_SIMULATION set to "true" freezes the source
+# (no new business days), e.g. while preparing a demo.
+name: nightly
+
+on:
+  schedule:
+    - cron: "23 1 * * *"          # 01:23 UTC daily (off the hour to avoid GitHub's busiest minute)
+  workflow_dispatch:
+
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+jobs:
+  pipeline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+      BQ_LOCATION: asia-south1
+      BQ_DATASET_RAW: raw_hris
+      BQ_DATASET_DEV: dbt_dev
+      BQ_DATASET_PROD: analytics
+      POSTGRES_URL: ${{ secrets.POSTGRES_URL }}
+      LANDING_POSTGRES_URL: ${{ secrets.LANDING_POSTGRES_URL }}
+      INGEST_SOURCE: ${{ vars.INGEST_SOURCE }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+          enable-cache: true
+
+      - name: Write the BigQuery key to a temp file
+        env:
+          BQ_SA_KEY_JSON: ${{ secrets.BQ_SA_KEY_JSON }}
+        run: |
+          printf '%s' "$BQ_SA_KEY_JSON" > "$RUNNER_TEMP/bq-key.json"
+          echo "BQ_KEYFILE=$RUNNER_TEMP/bq-key.json" >> "$GITHUB_ENV"
+
+      - name: Install
+        id: install
+        run: make setup
+
+      - name: Load landing data into BigQuery
+        run: |
+          if [ -z "$INGEST_SOURCE" ]; then
+            echo "::error::Set the repository variable INGEST_SOURCE (Settings > Secrets and variables > Actions > Variables): direct until the Fivetran connection is live, then fivetran."
+            exit 1
+          fi
+          make ingest SOURCE="$INGEST_SOURCE"
+
+      # Runs even if the load failed: yesterday's raw tables are valid input, and every table must be
+      # rewritten well inside the sandbox's 60-day expiry.
+      - name: Rebuild the warehouse (prod)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        run: make dbt-nightly TARGET=prod
+
+      - name: Source freshness (reported, never blocks)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        continue-on-error: true
+        run: make freshness TARGET=prod
+
+      # The business keeps moving even when the warehouse run fails.
+      - name: Simulate the next HR business day at the source
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && vars.PAUSE_SIMULATION != 'true' }}
+        run: make simulate-day
+
+      - name: Storage written (sandbox lifetime allowance)
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        continue-on-error: true
+        run: make storage-report RECORD=1
+
+      - name: Summary
+        if: always()
+        run: .venv/bin/python scripts/ci_summary.py >> "$GITHUB_STEP_SUMMARY"

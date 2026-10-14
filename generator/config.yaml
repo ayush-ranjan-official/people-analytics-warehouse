@@ -141,9 +141,10 @@ recruiting:
     Job Board:    {share: 0.20, quality: 0.6}
 
 # Known data-quality problems, planted on purpose so the warehouse tests have something real
-# to catch. Set enabled: false to fix them at the source.
+# to catch. The tests caught all four; they were then fixed in the source system with
+# generator/fix_source.sql (`make fix-source`) and switched off here, so regenerated data is clean.
 planted_issues:
-  enabled: true
+  enabled: false
   department_name_typos: 3            # "Engineering - X" typed as "Engg - X"
   duplicate_applications: 5           # double-submitted applications (same candidate, req, day)
   inverted_job_history: 2             # effective_to keyed in a year too early
