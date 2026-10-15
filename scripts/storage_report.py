@@ -7,7 +7,9 @@ The sandbox counts what has ever been written, not what's stored now ("a lifetim
 not refunded upon data deletion"), so this report counts writes:
 - load jobs (raw tables, seeds) report their output bytes exactly;
 - CREATE TABLE AS SELECT jobs (dbt table models) report rows written, converted to bytes with the
-  target table's current row size;
+  target table's current row size. If that table no longer exists (dropped, or now a view), the bytes
+  come from the query plan instead: the shuffle that feeds the output stage, which runs about a quarter
+  above the stored size, so the estimate errs high;
 - views and tests write nothing.
 
 BigQuery only keeps about six months of job history, so the running total lives in a small ledger
@@ -36,6 +38,7 @@ MIB, GIB = 1024**2, 1024**3
 LIFETIME_LIMIT = 10 * GIB
 TARGET = 5 * GIB                     # leave half the allowance as headroom
 LEDGER = "_storage_ledger"
+MIN_HISTORY_DAYS = 7
 
 
 def stored_now(client: bigquery.Client) -> tuple[int, dict[str, int]]:
@@ -59,6 +62,13 @@ def row_size(target: str, sizes: dict) -> float:
     return same[0][0] / same[0][1] if same else 0.0
 
 
+def plan_bytes(job: bigquery.QueryJob, rows: int) -> int:
+    """Bytes shuffled into the output stage: a slightly high estimate of what the job wrote."""
+    feeding = [s.shuffle_output_bytes or 0 for s in job.query_plan
+               if not s.name.endswith(": Output") and s.records_written == rows]
+    return max(feeding, default=0)
+
+
 def written_since(client: bigquery.Client, since: datetime | None, sizes: dict) -> tuple[dict, datetime | None]:
     """Bytes written per day by this account's successful jobs created after `since`."""
     per_day: dict[date, list[int]] = defaultdict(lambda: [0, 0, 0])     # load bytes, table bytes, jobs
@@ -76,7 +86,8 @@ def written_since(client: bigquery.Client, since: datetime | None, sizes: dict) 
         elif job.job_type == "query" and job.statement_type == "CREATE_TABLE_AS_SELECT" and job.ddl_target_table:
             target = job.ddl_target_table
             rows = sum(s.records_written or 0 for s in job.query_plan if s.name.endswith(": Output"))
-            per_day[day][1] += int(rows * row_size(f"{target.project}.{target.dataset_id}.{target.table_id}", sizes))
+            per_row = row_size(f"{target.project}.{target.dataset_id}.{target.table_id}", sizes)
+            per_day[day][1] += int(rows * per_row) if per_row else plan_bytes(job, rows)
             per_day[day][2] += 1
     return per_day, latest
 
@@ -130,21 +141,25 @@ def main() -> int:
         days[day] = [days[day][0] + load, days[day][1] + table, days[day][2] + jobs]
 
     total = sum(load + table for load, table, _ in days.values())
-    last_28 = sum(load + table for d, (load, table, _) in days.items() if d > now.date() - timedelta(days=28))
-    span = min(28, (now.date() - min(days)).days + 1) if days else 1
-    per_week = last_28 / span * 7
+    # The pace is the median day of the last 28 (development days write far more than a nightly run, and
+    # a median isn't pulled up by a few of them). Days with no writes count as zero.
+    window = [now.date() - timedelta(days=n) for n in range(1, 29) if now.date() - timedelta(days=n) >= min(days, default=now.date())]
+    daily = sorted(sum(days.get(d, [0, 0, 0])[:2]) for d in window)
+    per_day = daily[len(daily) // 2] if daily else 0
 
     print("Bytes written (lifetime, counts against the sandbox's 10 GiB):")
     for day in sorted(days)[-7:]:
         load, table, jobs = days[day]
         print(f"  {day}  loads {load / MIB:7.1f} MiB  tables {table / MIB:7.1f} MiB  ({jobs} jobs)")
     print(f"  total since {min(days) if days else '-'}: {total / MIB:.1f} MiB ({total / LIFETIME_LIMIT:.1%} of 10 GiB)")
-    print(f"  recent rate: {per_week / MIB:.1f} MiB a week (average over the last {span} days)")
-    if per_week > 0:
+    if len(daily) < MIN_HISTORY_DAYS:
+        print(f"  pace: needs {MIN_HISTORY_DAYS} complete days of history for a projection ({len(daily)} so far)")
+    elif per_day > 0:
+        print(f"  pace: {per_day / MIB:.1f} MiB on a median day (last {len(daily)} complete days)")
         for label, limit in (("5 GiB target", TARGET), ("10 GiB limit", LIFETIME_LIMIT)):
-            weeks = (limit - total) / per_week
-            when = (now + timedelta(weeks=weeks)).date() if weeks > 0 else "already reached"
-            print(f"  at this rate the {label} is reached: {when}")
+            days_left = (limit - total) / per_day
+            when = (now + timedelta(days=days_left)).date() if days_left > 0 else "already reached"
+            print(f"  at that pace the {label} is reached: {when}")
     print(f"Stored now: {stored / MIB:.1f} MiB across {len(sizes)} tables (views store nothing)")
 
     if args.record:
