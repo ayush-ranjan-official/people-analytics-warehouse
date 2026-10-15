@@ -64,7 +64,15 @@ Spend-cap budgets don't cover BigQuery, and budget alerts never stop spend (**do
 - Neon is supported as a **source** through the generic PostgreSQL connector, with logical replication
   (`pgoutput`) or query-based (xmin) sync. Teleport is retired. **docs**
 - **Destination:** Fivetran's generic PostgreSQL destination. Neon isn't named as a destination in
-  Fivetran's docs; Phase 2's setup test confirms it works.
+  Fivetran's docs, but it works: the initial sync on 2026-10-15 loaded all 8 tables (143,996 rows) in
+  47 s, and every row count matched the source. Text columns land as `character varying`; dates,
+  timestamps, numerics and booleans keep their source types. Both text types load into BigQuery as
+  STRING. **tested**
+- The setup test flags Neon's `wal_buffers` (7,360 kB) as outside best practice. It's harmless: the
+  value is Postgres's own auto setting (1/32 of `shared_buffers`, which is what Fivetran recommends),
+  and Neon doesn't let you change it. **tested**
+- Sync frequency here is every 6 hours, so each night's simulated day reaches the landing database
+  well before the next nightly load. **tested**
 - Schema drift: an added column flows in; a **renamed column arrives as a new column, and the old one
   stays** (old rows keep it, new rows go NULL); `ALTER COLUMN TYPE` is supported only with logical
   replication. **docs**

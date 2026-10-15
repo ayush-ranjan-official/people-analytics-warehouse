@@ -13,9 +13,8 @@ see [docs/decisions.md](docs/decisions.md).
 
 - [x] **Phase 0:** repo, BigQuery sandbox project, connection checks
 - [x] **Phase 1:** synthetic HRIS/ATS generator for "Nodewell Labs", loaded into Postgres
-- [ ] **Phase 2:** Fivetran sync into a Postgres landing database, batch-loaded into BigQuery
-      (loader and checks done; the Fivetran connection isn't live yet, so BigQuery is loaded with
-      `make ingest SOURCE=direct` in the meantime)
+- [x] **Phase 2:** Fivetran sync (logical replication) into a Postgres landing database, batch-loaded
+      into BigQuery
 - [x] **Phase 3:** dbt staging, SCD2 employee history, star schema marts, tests, nightly build
 - [x] **Phase 4:** model and column docs ([metric definitions](docs/metric-definitions.md)), and the
       schema context an AI agent gets ([eval/schema_context.md](eval/schema_context.md))
@@ -42,7 +41,8 @@ make load              # first load into the source Postgres (schema hris)
 make check-data        # row counts, FTE headcount, planted data-quality issues
 make simulate-day      # one more business day of hires, moves and exits
 
-make ingest SOURCE=direct   # load BigQuery raw_hris (SOURCE=direct until Fivetran is live)
+make ingest                 # load BigQuery raw_hris from Fivetran's landing schema
+make check-ingestion        # source -> Fivetran landing -> BigQuery: row counts, last sync, columns
 make dbt-build              # dbt seeds, models and tests (TARGET=prod for the analytics dataset)
 make storage-report         # bytes written so far vs the sandbox's 10 GiB lifetime allowance
 make docs                   # dbt docs, the agent's schema context, and a 100% documentation check
