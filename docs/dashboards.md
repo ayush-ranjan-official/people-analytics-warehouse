@@ -5,7 +5,7 @@ Two BI layers read the same `analytics` dataset, and both use the formulas in
 
 | | LookML | Data Studio |
 | --- | --- | --- |
-| What | The semantic layer: views, explores, measures and one dashboard, in [lookml/](../lookml/) | A four-page dashboard, "HR Overview - Nodewell Labs (synthetic data)": the spec and build guide below |
+| What | The semantic layer: views, explores, measures and one dashboard, in [lookml/](../lookml/) | A four-page dashboard, "HR Overview - Nodewell Labs (synthetic data)", built as described below |
 | Reads | The marts | Three reporting views, `analytics.rpt_*` ([dbt/models/reporting/](../dbt/models/reporting/)) |
 | Runs on | Looker, which has no free tier ([D7](decisions.md)), so here it's checked offline with `make validate-lookml` | Data Studio (free), against the BigQuery sandbox |
 | Good for | Any question the explores can answer. Looker handles the joins and fanout | The fixed pages and tiles below |
@@ -22,7 +22,12 @@ at the end of this page.
 
 ## Data Studio: HR Overview
 
-Four pages: Workforce, Attrition, Tenure and Recruiting. Allow about 20 minutes to build it.
+Four pages: Workforce, Attrition, Tenure and Recruiting. The report is built in Data Studio, owned by
+the project owner's Google account and not shared, so its pages are shown as screenshots:
+[Workforce](images/data-studio-workforce.png), [Attrition](images/data-studio-attrition.png),
+[Tenure](images/data-studio-tenure.png) and [Recruiting](images/data-studio-recruiting.png). Every
+tile was checked against SQL on the views ([Verification](#verification)). The steps below rebuild
+it; allow about 30 minutes.
 
 ### Before you start
 
@@ -36,18 +41,17 @@ Four pages: Workforce, Attrition, Tenure and Recruiting. Allow about 20 minutes 
 - Sign in to Data Studio with the Google account that owns `people-analytics-demo-2610`, not the dbt
   service account.
 - The project has no billing account ([D1](decisions.md)). Data Studio's BigQuery help says a billing
-  project is needed. If Data Studio asks for a billing account, stop: billing is never turned on for
-  this project.
+  project is needed, but this report was built and runs on the sandbox without one. If Data Studio
+  ever asks for a billing account, stop: billing is never turned on for this project.
 
 ### 1. Connect the views (3 min)
 
-1. In Data Studio, **Create** > **Report**. Under **Add data to report**, choose the **BigQuery**
-   connector and authorize it.
-2. **My projects** > `people-analytics-demo-2610` > `analytics` > `rpt_workforce_daily` > **Add**,
-   then **Add to report**.
+1. In Data Studio, **Create** > **Report**. It opens in the responsive layout, which the steps below
+   assume. Under **Add data to report**, choose the **BigQuery** connector and authorize it.
+2. **My projects** > the project (listed by its display name, People Analytics Demo) > `analytics` >
+   `rpt_workforce_daily` > **Add**, then **Add to report**.
 3. Add `rpt_exits` and `rpt_recruiting_funnel` the same way (**Add data** in the toolbar).
-4. Rename the three data sources `Workforce daily`, `Exits` and `Recruiting funnel` (Resource >
-   Manage added data sources > Edit; the name is at the top left).
+4. Keep the data sources' names. They're the view names, which the rest of this guide uses.
 5. In each data source, leave **Data credentials** on **Owner's credentials** (viewers then need no
    BigQuery access) and **Data freshness** on the default 12 hours. The marts change once a night,
    so a shorter interval only adds queries.
@@ -57,21 +61,15 @@ Check the field types Data Studio picked. Every `*_date` field and `month_start`
 aggregation Sum: headcount, total_tenure_days, hires, the five `*exits` fields, screened, interviewed,
 offered, hired and offer_declined. These counts are the only fields that should ever be summed.
 
-### 2. Match the filter fields across sources (2 min)
+### 2. Filter fields across sources (nothing to do)
 
-A Division or Location control only filters charts from another BigQuery source if the field IDs
-match; a matching name isn't enough. Set the IDs before you build any chart, because changing an ID
-that a chart already uses breaks that chart.
-
-Resource > **Manage field names and IDs** > **Add field override**, once per row:
-
-| Data source | Field | New ID |
-| --- | --- | --- |
-| Workforce daily | division_name | `division` |
-| Exits | division_name | `division` |
-| Recruiting funnel | division_name | `division` |
-| Workforce daily | location | `work_location` |
-| Exits | location | `work_location` |
+A Division or Location control filters charts from another BigQuery source when the fields have the
+same ID; a matching name isn't enough. Data Studio gives each BigQuery field its column name as the
+ID, and the views name their columns alike (`division_name` in all three, `location` in
+`rpt_workforce_daily` and `rpt_exits`), so controls built on `rpt_workforce_daily` filter the other
+two sources too. Leave the IDs alone: changing an ID that a chart already uses breaks that chart. On
+the built report, Division = Engineering gives 6.59% on the Workforce page for Q3 2026 and 64 offers
+accepted on the Recruiting page for the default four quarters, the same as SQL on the views.
 
 Applications have no work location, so the Location control has no effect on the Recruiting page.
 
@@ -80,7 +78,7 @@ Applications have no work location, so the Location control has no effect on the
 Add these in the data source rather than in a chart, so every chart uses the same definition:
 Resource > Manage added data sources > Edit > **Add a field**. Give each one the type shown.
 
-**Workforce daily**
+**rpt_workforce_daily**
 
 | Field | Formula | Type |
 | --- | --- | --- |
@@ -98,14 +96,14 @@ Resource > Manage added data sources > Edit > **Add a field**. Give each one the
 - Over a single day, Average headcount is that day's headcount.
 - Average tenure only means something on a single day. The tiles that use it are pinned to one day.
 
-**Exits**
+**rpt_exits**
 
 | Field | Formula | Type |
 | --- | --- | --- |
 | Exits | `COUNT(termination_key)` | Number |
 | Average tenure at exit (years) | `AVG(tenure_years_at_exit)` | Number |
 
-**Recruiting funnel**
+**rpt_recruiting_funnel**
 
 | Field | Formula | Type |
 | --- | --- | --- |
@@ -130,42 +128,48 @@ Resource > Manage added data sources > Edit > **Add a field**. Give each one the
 - On BigQuery, Data Studio's MEDIAN uses `APPROX_QUANTILES`, the same function the metric definitions
   use. Time to fill in Q3 2026 reads 47 days. An interpolated median would say 49.
 
-### 4. Title and controls (3 min)
+### 4. Header, title and controls (5 min)
 
-On the first page:
+In the responsive layout each page has a header with a report title and a date range control.
 
-- Add a text box with the title `HR Overview - Nodewell Labs (synthetic data)`. Under it, in smaller
-  text: `Synthetic data. FTEs only. The data runs to the HR system's reporting date, a few days behind
-  the calendar. Rates are for the selected period and not annualised.`
-- Add a **Date range control**. Set its default date range to Custom, 2025-10-01 to 2026-09-30: the
-  last four complete quarters. A partial quarter understates its rate. Move the range forward once
-  each quarter has closed.
-- Add a **Drop-down list** control on `division_name` (Workforce daily), titled Division.
-- Add a **Drop-down list** control on `location` (Workforce daily), titled Location.
+- Click **Add report title** and type `HR Overview - Nodewell Labs (synthetic data)`.
+- Select the date range control. In **Setup** > **Default date range filter**, choose Fixed,
+  2025-10-01 to 2026-09-30: the last four complete quarters. A partial quarter understates its rate.
+  Move the range forward once each quarter has closed. Picking dates on the control itself only
+  changes your own view, not the default.
+- With the header's **Add a control** button, add two **Drop-down list** controls on
+  `rpt_workforce_daily`: `division_name`, displayed as Division, and `location`, displayed as
+  Location. Set each control's metric to Average headcount, sorted descending so the largest come
+  first, and turn off **Show values**.
+- Beside the scorecards, add a text box in small type: `Synthetic data. FTEs only. The data runs to
+  the HR system's reporting date, a few days behind the calendar. Rates are for the selected period
+  and not annualised.`
 
-Select the title, the note and the three controls, then right-click > **Make report-level**. They
-then appear on every page and filter every chart.
+The responsive layout has no report-level components (Arrange > Make report-level is greyed out).
+Each page has its own header and controls, so a date range or Division picked on one page doesn't
+carry to the next. Build the Workforce page first, then use **Page** > **Duplicate page** for the
+others: the copies keep the header, the controls and their defaults.
 
 ### 5. Pages and tiles (8 min)
 
 For each chart, pick the data source and set **Setup > Date range dimension** as listed. Chart
-filters are under Setup > Filter > Add a filter. Show rates as percentages with 2 decimals (1 for
-recruiting), and headcount and days with 1 decimal.
+filters are under Setup > Filter > Add a filter. The rate fields are typed Percent; every number keeps
+Data Studio's default format, up to two decimals. Set each chart's title under Style > Chart title.
 
-**Page 1: Workforce.** Source: Workforce daily. Date range dimension: `snapshot_date`.
+**Page 1: Workforce.** Source: `rpt_workforce_daily`. Date range dimension: `snapshot_date`.
 
 | Tile | Chart | Dimension | Metrics | Sort | Filter and notes |
 | --- | --- | --- | --- | --- | --- |
-| FTE headcount today | Scorecard | | headcount | | Filter `is_reporting_date` = true. Set the chart's own default date range to a preset such as Last 30 days. A chart's own range overrides the date range control, and any range that contains the reporting date works, because the filter picks the day. |
+| FTE headcount today | Scorecard | | headcount | | Filter `is_reporting_date` = true. Set the chart's own default date range to Custom > Advanced, today minus 30 days to today. A chart's own range overrides the date range control, and any range that contains the reporting date works, because the filter picks the day |
 | Average headcount | Scorecard | | Average headcount | | |
 | FTE starts | Scorecard | | hires | | First days at work in the range |
 | Exits | Scorecard | | exits | | |
 | Attrition rate | Scorecard | | Attrition rate | | |
-| Average FTE headcount by month | Time series | month_start (type Year Month) | Average headcount | month_start, ascending | |
-| Average headcount by department | Bar | department_name | Average headcount | Average headcount, descending | 'Engineering' alone is the parent row with one person. Use Division for all of Engineering |
-| Locations | Table | location | Average headcount, hires, exits, Attrition rate | Average headcount, descending | Comparison date range: Previous year |
+| Average FTE headcount by month | Time series | month_start (type Year Month) | Average headcount | month_start, ascending | Without the Year Month type the line drops to zero between month starts |
+| Average FTE headcount by department | Table with bars | department_name | Average headcount | Average headcount, descending | A bar chart cuts the department names to a few letters, so this is a table with bars. 'Engineering' alone is the parent row with one person. Use Division for all of Engineering |
+| Locations | Table | location | Average headcount, hires, exits, Attrition rate | Average headcount, descending | |
 
-**Page 2: Attrition.** Source: Workforce daily, date range dimension `snapshot_date`, except where
+**Page 2: Attrition.** Source: `rpt_workforce_daily`, date range dimension `snapshot_date`, except where
 noted.
 
 | Tile | Chart | Dimension | Metrics | Sort | Filter and notes |
@@ -176,23 +180,24 @@ noted.
 | Regretted attrition rate | Scorecard | | Regretted attrition rate | | |
 | Quarterly attrition rate | Column | year_quarter | Attrition rate, Voluntary attrition rate, Involuntary attrition rate | year_quarter, ascending | Retirements count in the total only. A quarter that the date range cuts short shows a partial rate |
 | Attrition by department | Table | department_name | Average headcount, exits, voluntary_exits, regretted_exits, Attrition rate, Regretted attrition rate | Attrition rate, descending | |
-| Top exit reasons | Bar (horizontal) | reason | Exits | Exits, descending | Source: Exits. Date range dimension: `termination_date`. 10 bars |
+| Top exit reasons | Table with bars | reason | Exits | Exits, descending | Source: `rpt_exits`. Date range dimension: `termination_date`. Top 10 rows |
 
-**Page 3: Tenure.** Source: Workforce daily, date range dimension `snapshot_date`, except where noted.
+**Page 3: Tenure.** Source: `rpt_workforce_daily`, date range dimension `snapshot_date`, except where noted.
 
 | Tile | Chart | Dimension | Metrics | Sort | Filter and notes |
 | --- | --- | --- | --- | --- | --- |
 | Average tenure today (years) | Scorecard | | Average tenure (years) | | Same filter and own date range as FTE headcount today |
-| Tenure bands at each month end | Stacked column | month_start (type Year Month); breakdown dimension tenure_band | headcount | month_start, ascending; breakdown sorted by tenure_band_order (Max), ascending | Filter `is_month_end` = true |
+| FTE headcount by tenure band at each month end | Stacked column | month_start (type Year Month); breakdown dimension tenure_band | headcount | month_start, ascending; breakdown sorted by tenure_band_order (Max), ascending | Filter `is_month_end` = true |
 | Attrition by tenure band | Table | tenure_band | Average headcount, exits, Attrition rate | tenure_band_order (Max), ascending | Tenure as of each day. An exit counts at its tenure on the last day |
-| Average tenure at exit (years) | Scorecard | | Average tenure at exit (years) | | Source: Exits. Date range dimension: `termination_date` |
+| Average tenure at exit (years) | Scorecard | | Average tenure at exit (years) | | Source: `rpt_exits`. Date range dimension: `termination_date` |
 
 Text sorts '< 1 year' after '5+ years', so always sort the bands by `tenure_band_order`.
 
-**Page 4: Recruiting.** Source: Recruiting funnel. Add a page filter (Page > Current page settings >
-Setup > Filter > Add a filter): Include `employment_type` = `fte`. If your version has no page
-filter, add the same filter to each chart. Each recruiting metric is dated differently, so set the
-date range dimension per chart.
+**Page 4: Recruiting.** Source: `rpt_recruiting_funnel`. Add a page filter: **Page** > **Current page
+settings** > Setup, pick `rpt_recruiting_funnel` as the data source, then Filter > Add a filter >
+Include `employment_type` Equal to `fte`. Pick `fte` from the suggested values: a typed value that
+isn't picked is saved empty, and every tile then shows No data. Each recruiting metric is dated
+differently, so set the date range dimension per chart.
 
 | Tile | Chart | Dimension | Metrics | Sort | Date range dimension and notes |
 | --- | --- | --- | --- | --- | --- |
@@ -238,8 +243,10 @@ average headcount of 2.0 instead of 1.07, and understate any rate on that slice 
 
 ### Verification
 
-Set the date range to 2026-07-01 to 2026-09-30 and leave Division and Location empty. With data
-through 2026-10-10, the tiles must show:
+On each page, set the date range to 2026-07-01 to 2026-09-30 (each page has its own control) and
+leave Division and Location empty. The tiles must show the numbers below. The built report showed
+every one of them on 2026-10-15, with data through 2026-10-14; Q3 2026 is closed, so they don't move as
+the nightly run adds days.
 
 | Page | Tile | Expected |
 | --- | --- | --- |
@@ -258,11 +265,14 @@ through 2026-10-10, the tiles must show:
 
 Then check the following:
 
-- **Division = Engineering:** Average headcount 197.3, Exits 13, Attrition rate 6.59%.
+- **Division = Engineering:** Average headcount 197.3, Exits 13, Attrition rate 6.59%. On the
+  Recruiting page, over the default four quarters, Offers accepted reads 64.
 - **Date range 2025-01-01 to 2025-12-31, Division cleared:** the Funnel by source summary row should
   read 11,252 applications, then 2,833 screened, 931 interviewed, 209 offered and 159 accepted.
-- **The two "today" tiles** move every night. On reporting date 2026-10-10 they should read 596 FTEs
-  and 2.77 years.
+- **The two "today" tiles** move every night and ignore the date range control. On reporting date
+  2026-10-14 they read 596 FTEs and 2.78 years.
+
+The built report passed all three checks on 2026-10-15.
 
 This SQL computes the Workforce and Attrition tiles from the same view, for all divisions and for
 each division:
@@ -306,9 +316,9 @@ the views (`dbt_dev`).
   and date range it hasn't cached. Each query counts against the sandbox's 1 TiB a month of free
   query processing. The nightly dbt run draws on the same allowance.
 - **Measured costs** (queries against the views in BigQuery):
-  - A chart on Workforce daily processes about 2 MB but is billed about 100 MB. BigQuery bills at
+  - A chart on `rpt_workforce_daily` processes about 2 MB but is billed about 100 MB. BigQuery bills at
     least 10 MB for each table a query reads, and that view reads about ten.
-  - Charts on Exits and Recruiting funnel are billed about 30 MB each.
+  - Charts on `rpt_exits` and `rpt_recruiting_funnel` are billed about 30 MB each.
   - An uncached pass through all four pages would come to roughly 2 GB (estimated from these
     per-chart costs), so 1 TiB covers about 500 passes a month.
 - **Caching:** Data Studio keeps each result for the data freshness interval (12 hours). Reopening
@@ -336,7 +346,9 @@ the views (`dbt_dev`).
   requisitions are a count as of today. Use the LookML recruiting explore or the SQL in
   [ad-hoc-requests.md](ad-hoc-requests.md). A reporting view with one row per requisition would add it.
 - **The Recruiting page ignores Location.**
-- **The default date range is fixed.** Move it forward each quarter.
+- **Selections stay on their page.** Each page has its own date range, Division and Location
+  controls (step 4), so moving to another page goes back to that page's defaults.
+- **The default date range is fixed.** Move it forward each quarter, on every page.
 - **The two "today" tiles can go blank.** They depend on their own date range containing the reporting
   date. If the nightly run stops for longer than that range, they show nothing.
 
@@ -446,19 +458,19 @@ gives the same Q3 2026 numbers as the reporting views ([Verification](#verificat
 - company: average headcount 584.4, 24 leavers, 4.11%;
 - Engineering: 197.3, 13 leavers, 6.59%.
 
-Where the LookML model and the Data Studio spec differ:
+Where the LookML model and the Data Studio dashboard differ:
 
 - **Average headcount on a sparse slice:** Data Studio divides FTE days by every day in the range.
   LookML's `avg_headcount` divides by the days that have FTE rows in the selection, so on a slice
   with nobody in it on some days it reads high and its rates read low. In the current data the
   company and any single division, department or location have FTEs every day, so the two agree
   there. Example, Q3 2026, Engineering - Data, Singapore, under a year (FTEs on 49 of 92 days): 1.07
-  by the Data Studio spec's formula (`SUM(headcount) / COUNT_DISTINCT(snapshot_date)` on
+  by the Data Studio formula (`SUM(headcount) / COUNT_DISTINCT(snapshot_date)` on
   `rpt_workforce_daily`), 2.0 by LookML's. Over 2025-10-01 to 2026-09-30, Legal, Remote, 1-3 years has
   1 exit: 173% by the Data Studio formula, 100% by LookML's.
 - **Tenure band labels:** 'Under 1 year' in LookML, '< 1 year' in Data Studio. The cut-offs are the
   same.
 - **Time to fill:** in LookML it's a mean only, because Looker's symmetric aggregates don't cover
-  medians over the fanned-out requisition rows. The Data Studio spec also has the median, because
+  medians over the fanned-out requisition rows. The Data Studio dashboard also has the median, because
   `days_to_fill` is set only on the accepted application.
-- **Open requisitions:** LookML has them; the Data Studio spec doesn't include them.
+- **Open requisitions:** LookML has them; the Data Studio dashboard doesn't include them.

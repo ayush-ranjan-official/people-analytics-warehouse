@@ -23,6 +23,7 @@ free plan and GitHub Actions ([decisions](docs/decisions.md)).
 | Nightly build and tests | GitHub Actions at 01:23 UTC: load BigQuery, rebuild and test prod, report source freshness and storage, simulate the next HR business day | 2 seeds, 21 models and 131 data tests, all passing |
 | Documentation | `make docs`: dbt docs, the agent's schema context, a coverage check | 8 mart models and 132 columns: 140 of 140 documented |
 | LookML checks | `make validate-lookml`, offline | 8 views, 3 explores, 8 dashboard tiles: 0 errors, 0 warnings |
+| Data Studio dashboard | HR Overview: 4 pages over the reporting views, read with the owner's credentials (the report is private) | Every Q3 2026 tile and the 2025 funnel match SQL on the views; Division = Engineering matches on Workforce (6.59%) and Recruiting |
 | Text-to-SQL eval | `make eval` | 7/20 bare schema, 17/20 documented, 20/20 improved (in-sample); held-out 4/8, 8/8, 8/8 |
 | Visier reconciliation | `make migration-check` | Same definitions, source vs warehouse: 30 of 30 checks PASS (22 month-end headcounts, 8 period metrics). Visier's definitions: 6 PASS, 6 EXPLAINED to a zero residual, 0 FAIL |
 | Drills | `make drill NAME=...` | 3 schema-drift drills, each caught by the contract test; 2 live Fivetran drills, including a table dropped from replication that Fivetran reported as a successful sync and `make check-ingestion` caught |
@@ -275,14 +276,24 @@ nothing, and `make storage-report` tracks bytes written against the 10 GiB lifet
 LookML, checked offline with `make validate-lookml`: a view per mart, three explores (Headcount,
 Attrition, Recruiting) and an 8-tile LookML dashboard, with 0 errors and 0 warnings. Exits join
 one-to-one onto the leaver's own headcount row on their last day, so any filter narrows exits and
-headcount together. Every explore has a row filter on division, and salary needs an access grant. A
-Data Studio dashboard spec and build guide lays out four pages over three reporting views, which the
-nightly run builds and tests against the marts. Eight questions HR asks again and again are answered
+headcount together. Every explore has a row filter on division, and salary needs an access grant. The
+Data Studio dashboard, HR Overview, has four pages (Workforce, Attrition, Tenure, Recruiting) over
+three reporting views, which the nightly run builds and tests against the marts. Its tiles were
+checked one by one against SQL on the views; the report is private, so the screenshots below show it.
+Eight questions HR asks again and again are answered
 with the query, the result and the explore that serves each, for example 13 Engineering exits in
 Q3 2026, an attrition rate of 6.59%. [docs/dashboards.md](docs/dashboards.md),
 [docs/ad-hoc-requests.md](docs/ad-hoc-requests.md)
 
 ## Screenshots
+
+**Data Studio, HR Overview: Workforce page.** The four quarters to 2026-09-30: headcount today, average
+headcount, starts, exits and the attrition rate, the monthly trend, and headcount by department and
+location. The [Attrition](docs/images/data-studio-attrition.png),
+[Tenure](docs/images/data-studio-tenure.png) and [Recruiting](docs/images/data-studio-recruiting.png)
+pages follow the same layout.
+
+![Data Studio HR Overview, Workforce page](docs/images/data-studio-workforce.png)
 
 **dbt docs for `fct_terminations`.** Grain, key, joins, exclusions and the rehire gotcha, then each
 column with its description and tests.

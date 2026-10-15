@@ -1,6 +1,6 @@
 version: 2
 
-# Views for the Data Studio dashboard specified in docs/dashboards.md (exposure hr_overview, at the
+# Views for the Data Studio dashboard described in docs/dashboards.md (exposure hr_overview, at the
 # end). Data Studio can only aggregate the fields it's given, so every row carries its names and
 # periods, and the measures are counts that add up under any filter. The marts stay the source of
 # truth: these are shaped for one tool and aren't part of the agent's schema context.
@@ -236,9 +236,11 @@ exposures:
     type: dashboard
     maturity: low
     description: |
-      The Data Studio dashboard "HR Overview - Nodewell Labs (synthetic data)" specified in
-      docs/dashboards.md, reading the analytics dataset: headcount trend, attrition by quarter and type,
-      exit reasons, tenure bands and recruiting (time to hire, funnel conversion by stage and source).
+      The Data Studio dashboard "HR Overview - Nodewell Labs (synthetic data)", four pages built as
+      described in docs/dashboards.md and reading the analytics dataset with the owner's credentials:
+      headcount trend, attrition by quarter and type, exit reasons, tenure bands and recruiting (time
+      to hire and fill, offer acceptance, funnel conversion by stage and source). The report is private;
+      docs/images/data-studio-*.png show its pages.
     depends_on:
       - ref('rpt_workforce_daily')
       - ref('rpt_exits')

@@ -1,6 +1,6 @@
 # Platform notes
 
-Facts about the free tiers this project runs on, checked on **2026-10-14**. Free tiers change, so each
+Facts about the free tiers this project runs on, checked on **2026-10-14** (Data Studio on 2026-10-15). Free tiers change, so each
 note says where it came from: **tested** here, from the official **docs**, or **reported** in forums
 (treat these with caution). [decisions.md](decisions.md) explains what was decided because of them.
 
@@ -94,10 +94,31 @@ Spend-cap budgets don't cover BigQuery, and budget alerts never stop spend (**do
 - Changing a model from table to view needs `--full-refresh` on that model (or dropping the table)
   once; dbt won't replace a table with a view on its own. **tested**
 
+## Data Studio (free)
+
+- Data Studio is Looker Studio's name since April 2026. It's free. Every chart view runs BigQuery
+  queries, so don't share dashboards widely. **docs**
+- Its BigQuery connector works on the sandbox project with no billing account: the HR Overview report
+  reads the three reporting views with the owner's credentials, and no screen asked for billing.
+  **tested**
+- The Linking API (`/reporting/create?...`) rejects `ds.ds0.*` parameters without a template report
+  ("ds0 is not a valid data source alias for this report"), and the `ds.*` form copies the default
+  template's sample source, which then fails to load. A blank report plus **Add data** works.
+  **tested**
+- A BigQuery field's ID is its column name, so a control filters every source that has a column of
+  that name; no field-ID overrides were needed. **tested**
+- In the responsive layout there are no report-level components (Make report-level is greyed out).
+  Each page has its own header controls, and a selection on one page doesn't carry to the next.
+  **tested**
+- A page filter value typed but not picked from the suggestions is saved empty, and every tile on
+  the page then shows No data. **tested**
+- Bar charts cut long category labels to a few characters, whatever the chart's size; a table with
+  bars shows them whole. **tested**
+- In edit mode, picking dates on a date range control changes only your view; the default is set in
+  the control's Setup panel. **tested**
+
 ## Other
 
-- **Data Studio** is Looker Studio's name since April 2026. It's free. Every chart view runs BigQuery
-  queries, so don't share dashboards widely. **docs**
 - **GitHub Actions** is free for public repos. Scheduled workflows are switched off after 60 days with
   no repository activity. **docs**
 - **Google Cloud Skills Boost** LookML labs GSP890 and GSP891 showed "No cost" on 2026-10-14. They give a

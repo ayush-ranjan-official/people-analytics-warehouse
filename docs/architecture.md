@@ -21,7 +21,7 @@ flowchart LR
         rpt["reporting views<br/>rpt_*"]
     end
     lookml["LookML<br/>lookml/"]
-    studio["Data Studio<br/>HR Overview<br/>(spec and build guide)"]
+    studio["Data Studio<br/>HR Overview<br/>(4 pages)"]
     ctx["eval/schema_context.md"]
     agent["AI agent<br/>text-to-SQL eval"]
     visier["Visier migration<br/>inventory and reconciliation"]
@@ -39,8 +39,8 @@ flowchart LR
 ```
 
 Dotted lines aren't part of the nightly run: the bootstrap load (a stand-in used before the Fivetran
-connection went live, kept for rebuilding from scratch) and the Data Studio HR Overview, whose spec and
-build guide is [dashboards.md](dashboards.md).
+connection went live, kept for rebuilding from scratch) and the Data Studio HR Overview, which queries the
+views when someone opens it. [dashboards.md](dashboards.md) shows how it's built.
 
 The design goal is one people-analytics layer that HR, dashboards and AI agents can all query and get
 the same, correct answer. The hard parts are settled once, in the warehouse: effective-dated history,
@@ -113,8 +113,8 @@ Employee facts (headcount, hires, terminations) carry the `employee_key` in effe
 safely, so rows carry their names and periods. Measures are additive counts, plus per-row durations
 (tenure at exit, days to hire and to fill) that are only averaged. No view stores a rate, so rates are
 calculated fields, right under any filter. Tests reconcile the views with the marts, and the exposure
-`hr_overview` puts the dashboard in the lineage. [dashboards.md](dashboards.md) is its spec and build
-guide ([D7](decisions.md#d7-semantic-layer-and-bi-lookml-in-the-repo-data-studio-for-live-dashboards)).
+`hr_overview` puts the dashboard in the lineage. [dashboards.md](dashboards.md) describes its pages
+and how to build it ([D7](decisions.md#d7-semantic-layer-and-bi-lookml-in-the-repo-data-studio-for-live-dashboards)).
 **Repo:** [dbt/models/reporting/](../dbt/models/reporting/).
 
 ### Semantic layer (LookML)

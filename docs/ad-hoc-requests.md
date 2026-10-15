@@ -1,7 +1,7 @@
 # Recurring ad-hoc requests, answered once
 
 Eight questions HR asks again and again. Each one used to mean a one-off query. Now each maps to a
-tile in the Data Studio dashboard spec and to an explore in the LookML model ([dashboards.md](dashboards.md)).
+tile in the Data Studio dashboard and to an explore in the LookML model ([dashboards.md](dashboards.md)).
 
 The answers below are for the synthetic data through the reporting date, **2026-10-10**. The main
 answer to each was computed with the query shown, against the `analytics` marts. The same numbers
@@ -15,7 +15,7 @@ The questions use these periods:
 
 Every number is for FTEs only. Rates are for the period and not annualised.
 
-| # | Question | Data Studio tile (spec) | LookML explore | Answer |
+| # | Question | Data Studio tile | LookML explore | Answer |
 | --- | --- | --- | --- | --- |
 | 1 | How many engineers did we lose last quarter? | Attrition, Division = Engineering | `headcount` | 13 exits, 6.59% |
 | 2 | What's our regretted attrition this year by department? | Attrition > Attrition by department | `headcount` | 22 regretted exits, 3.88%; Engineering - Data highest at 8.87% |
@@ -231,7 +231,7 @@ order by accepted desc
 **Data Studio:** Tenure page, with Division set to Sales.
 
 - Average tenure today reads the reporting date.
-- Tenure bands at each month end shows the trend.
+- FTE headcount by tenure band at each month end shows the trend.
 - Attrition by tenure band covers the selected period.
 
 **LookML:** `headcount` explore.
