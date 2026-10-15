@@ -105,8 +105,8 @@ drill: check-env ## Break the source on purpose: NAME=<drill>, REVERT=1 undoes i
 # ---------------------------------------------------------------- Later phases
 
 
-validate-lookml: ## (Phase 5) Parse and cross-check LookML files
-	@echo "Not implemented yet: Phase 5"; exit 1
+validate-lookml: ## Offline LookML checks: parse, field references, mart columns, joins, fanout, dashboards (STRICT=1 fails on warnings)
+	$(RUN) python scripts/validate_lookml.py $(if $(STRICT),--strict)
 
 eval: ## (Phase 8) Run the text-to-SQL evaluation
 	@echo "Not implemented yet: Phase 8"; exit 1

@@ -117,8 +117,10 @@ Looker has no free self-serve tier for your own data. So:
   (parse, field references, every measure documented).
 - **Looker IDE practice:** Google Cloud Skills Boost LookML labs that are marked "No cost". They run on
   Google's sample data, not ours.
-- **Live dashboards:** Data Studio (Looker Studio's name since 2026), reading the BigQuery marts. It is
-  free. Connecting it to a sandbox dataset is confirmed hands-on in Phase 5.
+- **Live dashboards:** Data Studio (Looker Studio's name since 2026), reading three dbt reporting views
+  over the marts (`analytics.rpt_*`, see [dashboards.md](dashboards.md)). It is free. The views hold
+  additive counts on a dense daily grid, so rates are calculated fields that stay right under any
+  filter. Whether it connects to a sandbox dataset with no billing account is still to be tried.
 
 ## D8. The text-to-SQL eval calls Claude through the Claude Code CLI
 *2026-10-14*

@@ -1,0 +1,247 @@
+version: 2
+
+# Views behind the Data Studio dashboard (exposure hr_overview, at the end). Data Studio can only
+# aggregate the fields it's given, so every row carries its names and periods, and the measures are
+# counts that add up under any filter. The marts stay the source of truth: these are shaped for one tool
+# and aren't part of the agent's schema context.
+
+models:
+  - name: rpt_workforce_daily
+    description: |
+      - Grain: one row per day, department, location and tenure band, from 2023-10-01 to the reporting
+        date. Every combination is present on every day, with zeros where nobody matches.
+      - Primary key: snapshot_date + department_id + location + tenure_band.
+      - Use for: headcount, average headcount, attrition and tenure in Data Studio. Average headcount =
+        sum(headcount) / count_distinct(snapshot_date); attrition rate = sum(exits) / average headcount;
+        headcount on a day = sum(headcount) filtered to that day; average tenure on a day =
+        sum(total_tenure_days) / sum(headcount) / 365.25.
+      - Join: nothing. Names and periods are already on the row.
+      - Excludes: contractors and interns (FTEs only); days before 2023-10-01 and after the reporting
+        date, and any exit or start dated outside them.
+      - Gotcha: never sum headcount over several days without dividing by the number of days. The zero
+        rows are what keep count_distinct(snapshot_date) equal to the days in the period under any
+        filter, so don't filter them out (e.g. headcount > 0). Department, location and tenure band are
+        as of each day, so a tenure-band filter gives exits at that tenure over the average headcount
+        at that tenure.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [snapshot_date, department_id, location, tenure_band]
+      # One query instead of one not_null per column: each query on this view is billed about 100 MB.
+      - dbt_utils.expression_is_true:
+          name: rpt_workforce_daily_has_no_nulls
+          arguments:
+            expression: >-
+              snapshot_date is not null and department_id is not null and department_name is not null
+              and division_name is not null and location is not null and tenure_band is not null
+              and tenure_band_order is not null and headcount is not null and total_tenure_days is not null
+              and hires is not null and exits is not null and voluntary_exits is not null
+              and involuntary_exits is not null and retirement_exits is not null and regretted_exits is not null
+    columns:
+      - name: snapshot_date
+        description: The day being counted. Use it as the dashboard's date range dimension.
+      - name: month_start
+        description: First day of the month, for monthly trends.
+      - name: year_quarter
+        description: Calendar year and quarter as text, e.g. '2026-Q3'.
+      - name: calendar_year
+        description: Calendar year, e.g. 2026.
+      - name: calendar_quarter
+        description: Calendar quarter, 1 to 4 (Q1 = January to March).
+      - name: fiscal_year
+        description: Fiscal year (April to March), named after the year it ends (FY2027 = 2026-04-01 to 2027-03-31).
+      - name: fiscal_quarter
+        description: Fiscal quarter, 1 to 4 (Q1 = April to June).
+      - name: is_month_end
+        description: True on the last day of a calendar month, for month-end headcount.
+      - name: is_reporting_date
+        description: True on the reporting date (the latest day in the data), for headcount today.
+      - name: department_id
+        description: Department or team that day. Same ids as dim_org.
+      - name: department_name
+        description: Department or team name, e.g. 'Sales' or 'Engineering - Data'.
+      - name: division_name
+        description: The top-level department it rolls up to. Filter division_name = 'Engineering' for all of Engineering.
+      - name: location
+        description: "Work location that day: Bengaluru, London, New York, Remote or Singapore."
+      - name: tenure_band
+        description: "Tenure that day (for an exit, at exit), from the employment record's hire_date: '< 1 year', '1-3 years', '3-5 years' or '5+ years' (years of 365.25 days; a rehire starts again at zero)."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: ['< 1 year', '1-3 years', '3-5 years', '5+ years']
+      - name: tenure_band_order
+        description: 1 to 4, shortest tenure first. Sort tenure_band by it; text sorts '< 1 year' last.
+      - name: headcount
+        description: FTEs employed that day. A leaver still counts on their last day. Sum it on one day, or divide by count_distinct(snapshot_date) over a period.
+      - name: total_tenure_days
+        description: Tenure in days added up over the FTEs in headcount. sum(total_tenure_days) / sum(headcount) / 365.25 is average tenure in years on a single day.
+      - name: hires
+        description: FTEs whose first day at work was that day (fct_hires.hire_date), in the department and location they joined.
+      - name: exits
+        description: FTE exits whose last day employed was that day, in the department and location they left from. The attrition numerator.
+      - name: voluntary_exits
+        description: Exits where the person chose to leave (termination_type = 'voluntary').
+      - name: involuntary_exits
+        description: Exits where the company ended the employment (termination_type = 'involuntary').
+      - name: retirement_exits
+        description: Exits by retirement (termination_type = 'retirement').
+      - name: regretted_exits
+        description: Voluntary exits the manager marked as someone they wanted to keep (regretted_flag).
+
+  - name: rpt_exits
+    description: |
+      - Grain: one row per FTE exit event (the rows of fct_terminations).
+      - Primary key: termination_key.
+      - Use for: exits by reason, type, tenure band, department or location in Data Studio (count rows).
+      - Join: nothing. Names and periods are already on the row.
+      - Excludes: contractors and interns, as fct_terminations.
+      - Gotcha: no rates here, because there's no headcount: take attrition rates from
+        rpt_workforce_daily, which counts the same exits. regretted_flag is null for involuntary exits
+        and retirements. To count people rather than exits, count distinct person_id.
+    columns:
+      - name: termination_key
+        description: Surrogate key for the exit (INT64), as fct_terminations.
+        data_tests: [unique, not_null]
+      - name: termination_id
+        description: HRIS exit record id.
+      - name: employee_id
+        description: HRIS employee id of the employment record that ended.
+      - name: person_id
+        description: The same person across rehires.
+      - name: termination_date
+        description: Last day employed. Use it as the date range dimension.
+        data_tests: [not_null]
+      - name: month_start
+        description: First day of the month of termination_date.
+      - name: year_quarter
+        description: Calendar year and quarter of termination_date as text, e.g. '2026-Q3'.
+      - name: calendar_year
+        description: Calendar year of termination_date.
+      - name: calendar_quarter
+        description: Calendar quarter of termination_date, 1 to 4.
+      - name: fiscal_year
+        description: Fiscal year (April to March) of termination_date, named after the year it ends.
+      - name: fiscal_quarter
+        description: Fiscal quarter of termination_date, 1 to 4 (Q1 = April to June).
+      - name: department_id
+        description: Department or team on the exit date.
+      - name: department_name
+        description: Department or team name on the exit date.
+        data_tests: [not_null]
+      - name: division_name
+        description: The top-level department it rolls up to. Filter division_name = 'Engineering' for all of Engineering.
+        data_tests: [not_null]
+      - name: location
+        description: Work location on the exit date.
+      - name: job_level
+        description: Level on the exit date, 'L1' to 'L7'.
+      - name: termination_type
+        description: "'voluntary' (the person chose to leave), 'involuntary' (the company ended it) or 'retirement'."
+        data_tests: [not_null]
+      - name: reason_code
+        description: HRIS reason code, e.g. 'VOL_COMPENSATION'.
+      - name: reason
+        description: The reason in plain English, e.g. 'Compensation'.
+      - name: regretted_flag
+        description: True if the manager marked the leaver as someone they wanted to keep. Set only for voluntary exits; null for involuntary exits and retirements.
+      - name: tenure_days_at_exit
+        description: Days from hire_date to termination_date.
+      - name: tenure_years_at_exit
+        description: tenure_days_at_exit / 365.25. Average it for the mean tenure of leavers.
+      - name: tenure_band
+        description: "Tenure at exit: '< 1 year', '1-3 years', '3-5 years' or '5+ years'. Same bands as rpt_workforce_daily."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: ['< 1 year', '1-3 years', '3-5 years', '5+ years']
+      - name: tenure_band_order
+        description: 1 to 4, shortest tenure first. Sort tenure_band by it.
+
+  - name: rpt_recruiting_funnel
+    description: |
+      - Grain: one row per application (the rows of fct_application_funnel).
+      - Primary key: application_id.
+      - Use for: funnel conversion by stage and source, time to hire and time to fill by department,
+        offer acceptance, in Data Studio. Stage counts are 0/1, so sum them.
+      - Join: nothing. Names and the requisition's dates are already on the row.
+      - Excludes: double submissions, as fct_application_funnel.
+      - Gotcha: contractor and intern openings are included: filter employment_type = 'fte'. Each
+        metric has its own date range dimension: applied_date for a funnel cohort (pick one old enough
+        to have finished), offer_accepted_date for time to hire and time to fill, offer_decision_date
+        for offer acceptance (sum(hired) / (sum(hired) + sum(offer_declined))). hired means the offer
+        was accepted, not that the person has started.
+    columns:
+      - name: application_id
+        description: ATS application id.
+        data_tests: [unique, not_null]
+      - name: req_id
+        description: The requisition applied to.
+      - name: department_id
+        description: Hiring department or team.
+      - name: department_name
+        description: Hiring department or team name.
+        data_tests: [not_null]
+      - name: division_name
+        description: The top-level department it rolls up to. Filter division_name = 'Engineering' for all of Engineering.
+        data_tests: [not_null]
+      - name: employment_type
+        description: "What the requisition is for: 'fte', 'contractor' or 'intern'. Filter 'fte' for the standard metrics."
+        data_tests: [not_null]
+      - name: source
+        description: "Where the candidate came from: Agency, Careers Site, Job Board, LinkedIn or Referral."
+      - name: applied_date
+        description: Day the application was submitted. The date range dimension for funnel cohorts.
+        data_tests: [not_null]
+      - name: current_stage
+        description: Latest stage reached. In progress, 'applied', 'screen', 'interview' or 'offer'; finished, 'hired', 'rejected', 'withdrawn' or 'offer_declined'.
+      - name: is_closed
+        description: True once the application has finished (hired, rejected, withdrawn or offer declined).
+      - name: screened
+        description: 1 if the application reached the screen stage, else 0.
+        data_tests: [not_null]
+      - name: interviewed
+        description: 1 if it reached the interview stage, else 0.
+        data_tests: [not_null]
+      - name: offered
+        description: 1 if an offer was made, else 0.
+        data_tests: [not_null]
+      - name: hired
+        description: 1 if the offer was accepted, else 0. Accepted, not started (fct_hires.hire_date is the start).
+        data_tests: [not_null]
+      - name: offer_declined
+        description: 1 if the candidate declined the offer, else 0.
+        data_tests: [not_null]
+      - name: offer_outcome
+        description: "'accepted' or 'declined' once the candidate has answered an offer; null otherwise (no offer, or still waiting)."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [accepted, declined]
+      - name: offer_decision_date
+        description: Day the offer was accepted or declined. Null without an answer. The date range dimension for offer acceptance.
+      - name: offer_accepted_date
+        description: Day the offer was accepted. Null if it wasn't. The date range dimension for time to hire and time to fill.
+      - name: days_to_hire
+        description: Days from applying to accepting the offer. Null unless accepted. Average or median it for time to hire.
+      - name: req_opened_date
+        description: Day the requisition was opened.
+      - name: days_to_fill
+        description: Days from the requisition opening to this offer being accepted. Set only on the accepted application, so each filled requisition counts once in an average.
+
+exposures:
+  - name: hr_overview
+    label: HR Overview - Nodewell Labs (synthetic data)
+    type: dashboard
+    maturity: medium
+    description: |
+      The Data Studio dashboard "HR Overview - Nodewell Labs (synthetic data)", reading the analytics
+      dataset: headcount trend, attrition by quarter and type, exit reasons, tenure bands and recruiting
+      (time to hire, funnel conversion by stage and source).
+    depends_on:
+      - ref('rpt_workforce_daily')
+      - ref('rpt_exits')
+      - ref('rpt_recruiting_funnel')
+    owner:
+      name: People analytics

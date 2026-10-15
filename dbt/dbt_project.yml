@@ -38,6 +38,9 @@ models:
       +materialized: table
     marts:
       +materialized: table
+    # Data Studio sources: views over the marts, so they cost no storage and are never out of step.
+    reporting:
+      +materialized: view
 
 seeds:
   people_analytics:

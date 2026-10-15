@@ -19,7 +19,9 @@ see [docs/decisions.md](docs/decisions.md).
 - [x] **Phase 3:** dbt staging, SCD2 employee history, star schema marts, tests, nightly build
 - [x] **Phase 4:** model and column docs ([metric definitions](docs/metric-definitions.md)), and the
       schema context an AI agent gets ([eval/schema_context.md](eval/schema_context.md))
-- [ ] **Phase 5:** LookML semantic layer and Data Studio dashboards
+- [x] **Phase 5:** LookML semantic layer ([lookml/](lookml/), checked offline with `make validate-lookml`)
+      and Data Studio reporting views, with a [dashboard build guide](docs/dashboards.md) and the
+      [recurring HR questions](docs/ad-hoc-requests.md) it answers (the dashboard itself is still to be built)
 - [ ] **Phase 6:** schema-drift and sync-failure drills, with runbooks
       (all five drills built and run against the source; the sync-failure drills still need the
       live Fivetran connection to time the alerts)
@@ -44,6 +46,7 @@ make ingest SOURCE=direct   # load BigQuery raw_hris (SOURCE=direct until Fivetr
 make dbt-build              # dbt seeds, models and tests (TARGET=prod for the analytics dataset)
 make storage-report         # bytes written so far vs the sandbox's 10 GiB lifetime allowance
 make docs                   # dbt docs, the agent's schema context, and a 100% documentation check
+make validate-lookml        # offline LookML checks: parse, field references, joins, fanout, dashboards
 ```
 
 Run `make help` for all targets.
