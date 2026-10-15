@@ -16,7 +16,7 @@ TARGET   ?= dev
 .PHONY: help setup check check-env check-gcp check-dbt check-postgres setup-gcp \
         generate load simulate-day backfill-source check-data fix-source \
         setup-replication ingest check-ingestion \
-        dbt-build dbt-nightly freshness storage-report drill validate-lookml eval docs
+        dbt-build dbt-nightly freshness storage-report drill check-inventory migration-check validate-lookml eval docs
 
 help: ## List targets
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
@@ -102,9 +102,14 @@ drill: check-env ## Break the source on purpose: NAME=<drill>, REVERT=1 undoes i
 	@test -n "$(NAME)" && test -n "$(filter $(NAME),$(DRILLS))" || { echo "NAME must be one of: $(DRILLS)"; exit 1; }
 	$(RUN) python -m simulations.$(NAME) $(if $(REVERT),--revert)
 
-# ---------------------------------------------------------------- Later phases
+# ---------------------------------------------------------------- Phase 7: migration
+check-inventory: ## Offline: inventory rows point at real models and LookML fields; every mart and measure covered
+	$(RUN) python scripts/check_migration_inventory.py
 
+migration-check: check-env check-inventory ## The inventory check, then the Visier reconciliation
+	$(RUN) python scripts/reconcile.py
 
+# ---------------------------------------------------------------- Phase 5: semantic layer
 validate-lookml: ## Offline LookML checks: parse, field references, mart columns, joins, fanout, dashboards (STRICT=1 fails on warnings)
 	$(RUN) python scripts/validate_lookml.py $(if $(STRICT),--strict)
 
