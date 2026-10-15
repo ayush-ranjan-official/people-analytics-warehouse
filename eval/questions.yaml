@@ -1,0 +1,344 @@
+# Text-to-SQL eval questions: 20 HR questions about the analytics marts, each with a hand-checked gold query.
+#
+# eval/run_eval.py sends each question to the model with a schema file (bare or documented), runs the
+# generated SQL and gold_sql on BigQuery at the same moment, and compares the two results:
+#   compare.columns        gold columns that must be matched, most important first. Column names in the
+#                          generated result don't matter, only their values.
+#   compare.tolerance      absolute tolerance for numbers: 0 for counts, 0.05 for days, years or average
+#                          headcount, 0.0005 for rates as fractions (wider where noted).
+#   compare.rate           the value is a rate, so 0.0411 and 4.11 both match.
+#   compare.order_matters  only for ranked questions.
+# Each "tests" line names the trap or skill the question checks. Answers are recorded under each
+# question as of reporting date 2026-10-11 or 2026-10-12 (analytics.int_reporting_date; each says
+# which), with the wrong answers the usual mistakes give. Periods are closed, so they don't move as
+# the source advances; the "today" questions compute today from the data, never from current_date().
+# No answer is given away by the worked examples in eval/schema_context.md, but eight questions
+# (marked) are a worked example on another date or cohort, so the documented context helps them most.
+# Mix: 6 easy, 9 medium, 5 hard.
+
+questions:
+
+  # ---------------------------------------------------------------- easy
+
+  - id: q01
+    difficulty: easy
+    question: What was our headcount on 30 June 2026?
+    tests: FTE filter (headcount counts full-time employees only)
+    # close to a worked example: the docs' headcount query, for 2026-09-30
+    gold_sql: |
+      select countif(is_fte) as headcount
+      from `people-analytics-demo-2610.analytics.fct_headcount_daily`
+      where snapshot_date = '2026-06-30'
+    compare: {columns: [headcount], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: 574 (608 with contractors and interns)
+
+  - id: q02
+    difficulty: easy
+    question: Which division has the most employees today, and how many does it have?
+    tests: division (all of Engineering, not its teams); reporting date not current_date; FTE filter
+    gold_sql: |
+      select o.division_name as division, countif(h.is_fte) as headcount
+      from `people-analytics-demo-2610.analytics.fct_headcount_daily` as h
+      join `people-analytics-demo-2610.analytics.dim_org` as o using (department_id)
+      where h.snapshot_date = (
+          select reporting_date from `people-analytics-demo-2610.analytics.int_reporting_date`
+      )
+      group by o.division_name
+      order by headcount desc
+      limit 1
+    compare: {columns: [division, headcount], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-12 data: Engineering, 203 (by department_name, which splits Engineering into
+    # teams, Sales looks largest with 121; current_date() is past the reporting date and finds nobody)
+
+  - id: q03
+    difficulty: easy
+    question: How many new employees started between April and June 2026?
+    tests: offer accepted vs start date (a hire counts on the first day at work)
+    # close to a worked example: the docs count Q3 2026 starts from fct_hires.hire_date
+    gold_sql: |
+      select count(*) as employees_started
+      from `people-analytics-demo-2610.analytics.fct_hires`
+      where hire_date between '2026-04-01' and '2026-06-30'
+    compare: {columns: [employees_started], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: 37 (47 offers were accepted in those months; 53 with contractors
+    # and interns)
+
+  - id: q04
+    difficulty: easy
+    question: How many open requisitions do we have right now?
+    tests: FTE filter on requisitions (contractor openings excluded)
+    gold_sql: |
+      select count(*) as open_requisitions
+      from `people-analytics-demo-2610.analytics.fct_requisitions`
+      where employment_type = 'fte' and requisition_status = 'open'
+    compare: {columns: [open_requisitions], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-12 data: 15 (19 with contractor openings)
+
+  - id: q05
+    difficulty: easy
+    question: How many employees left the company in 2025?
+    tests: FTE exits only (a contract or internship ending isn't attrition)
+    gold_sql: |
+      select count(*) as exits
+      from `people-analytics-demo-2610.analytics.fct_terminations`
+      where termination_date between '2025-01-01' and '2025-12-31'
+    compare: {columns: [exits], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: 77 (107 counting contractors and interns whose records ended)
+
+  - id: q06
+    difficulty: easy
+    question: How many employees were promoted in 2025?
+    tests: job history (versions starting with change_reason = 'promotion' in the year)
+    gold_sql: |
+      select count(distinct person_id) as employees_promoted
+      from `people-analytics-demo-2610.analytics.dim_employee`
+      where change_reason = 'promotion'
+        and employment_type = 'fte'
+        and valid_from between '2025-01-01' and '2025-12-31'
+    compare: {columns: [employees_promoted], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: 91 (91 promotions; nobody was promoted twice; no contractor or
+    # intern was promoted, so the FTE filter doesn't change it)
+
+  # ---------------------------------------------------------------- medium
+
+  - id: q07
+    difficulty: medium
+    question: What was voluntary attrition in Engineering in Q3 2026?
+    tests: division vs department; voluntary exits only; average headcount denominator
+    # close to a worked example: the docs' attrition query, with its Engineering variant
+    gold_sql: |
+      with exits as (
+          select count(*) as voluntary_exits
+          from `people-analytics-demo-2610.analytics.fct_terminations` as t
+          join `people-analytics-demo-2610.analytics.dim_org` as o using (department_id)
+          where o.division_name = 'Engineering'
+            and t.termination_type = 'voluntary'
+            and t.termination_date between '2026-07-01' and '2026-09-30'
+      ),
+      headcount as (
+          select count(*) / count(distinct h.snapshot_date) as average_headcount
+          from `people-analytics-demo-2610.analytics.fct_headcount_daily` as h
+          join `people-analytics-demo-2610.analytics.dim_org` as o using (department_id)
+          where h.is_fte
+            and o.division_name = 'Engineering'
+            and h.snapshot_date between '2026-07-01' and '2026-09-30'
+      )
+      select voluntary_exits / average_headcount as voluntary_attrition_rate
+      from exits, headcount
+    compare: {columns: [voluntary_attrition_rate], tolerance: 0.0005, rate: true, order_matters: false}
+    # answer on 2026-10-11 data: 0.0557 (11 voluntary exits / 197.3 average FTEs;
+    # department_name = 'Engineering' finds no exits)
+
+  - id: q08
+    difficulty: medium
+    question: What was the median time to hire for Sales roles in 2024?
+    tests: time to hire (application to offer accepted, FTE offers accepted in the year), not time to fill or start date
+    gold_sql: |
+      select approx_quantiles(date_diff(date(f.hired_at), f.applied_date, day), 2)[offset(1)] as median_days_to_hire
+      from `people-analytics-demo-2610.analytics.fct_application_funnel` as f
+      join `people-analytics-demo-2610.analytics.dim_org` as o using (department_id)
+      where f.employment_type = 'fte'
+        and f.reached_hired
+        and o.division_name = 'Sales'
+        and date(f.hired_at) between '2024-01-01' and '2024-12-31'
+    # 31 offers, an odd number, so every median method gives exactly 27. The date-based mean (26.6)
+    # and a median of fractional days from the timestamps (26.7) must not pass.
+    compare: {columns: [median_days_to_hire], tolerance: 0.05, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: 27 days (26 for Sales hires who started in 2024, 28 with contractor
+    # roles, 47 for time to fill)
+
+  - id: q09
+    difficulty: medium
+    question: How many regretted exits did we have last calendar year, by location?
+    tests: regretted_flag; "last calendar year" from the reporting date; location on the exit date
+    gold_sql: |
+      select location, count(*) as regretted_exits
+      from `people-analytics-demo-2610.analytics.fct_terminations`
+      where regretted_flag
+        and extract(year from termination_date) = (
+            select extract(year from reporting_date) - 1
+            from `people-analytics-demo-2610.analytics.int_reporting_date`
+        )
+      group by location
+    compare: {columns: [location, regretted_exits], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-11 data (2025): London 5, New York 4, Bengaluru 3, Singapore 2, Remote 1
+    # (all exits: Bengaluru 28, New York 16, London 13, Singapore 12, Remote 8). "Calendar" rules out
+    # FY2026 (New York 5, Bengaluru 4, London 3, ...) and the last 12 months (Bengaluru 9, New York 6, ...).
+
+  - id: q10
+    difficulty: medium
+    question: What was our average headcount in 2025?
+    tests: average headcount (mean of the daily FTE count), not the headcount at the start or end
+    # close to a worked example: the docs' average headcount query, for Q3 2026
+    gold_sql: |
+      select count(*) / count(distinct snapshot_date) as average_headcount
+      from `people-analytics-demo-2610.analytics.fct_headcount_daily`
+      where is_fte and snapshot_date between '2025-01-01' and '2025-12-31'
+    compare: {columns: [average_headcount], tolerance: 0.05, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: 494.6 (463 on 1 Jan, 540 on 31 Dec)
+
+  - id: q11
+    difficulty: medium
+    question: What was our offer acceptance rate in the second quarter of 2026 (April to June)?
+    tests: offer acceptance (accepted / accepted + declined, by decision date); FTE filter
+    # close to a worked example: the docs' offer acceptance query, for Q3 2026
+    gold_sql: |
+      select countif(current_stage = 'hired') / count(*) as offer_acceptance_rate
+      from `people-analytics-demo-2610.analytics.fct_application_funnel`
+      where employment_type = 'fte'
+        and current_stage in ('hired', 'offer_declined')
+        and date(coalesce(hired_at, closed_out_at)) between '2026-04-01' and '2026-06-30'
+    compare: {columns: [offer_acceptance_rate], tolerance: 0.0005, rate: true, order_matters: false}
+    # answer on 2026-10-11 data: 0.6912 (47 of 68; 0.7051 with contractor roles, 0.6769 by offer date)
+
+  - id: q12
+    difficulty: medium
+    question: Where did the people who started with us in the first half of 2026 come from? Give the number of hires from each recruiting source.
+    tests: hires by source; start date vs offer accepted
+    gold_sql: |
+      select application_source, count(*) as hires
+      from `people-analytics-demo-2610.analytics.fct_hires`
+      where hire_date between '2026-01-01' and '2026-06-30'
+      group by application_source
+    compare: {columns: [application_source, hires], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: LinkedIn 24, Referral 17, Careers Site 16, Agency 10, Job Board 8
+    # (by offer accepted: LinkedIn 26, Careers Site 17, Referral 16, Agency 12, Job Board 12)
+
+  - id: q13
+    difficulty: medium
+    question: What was the average time to fill for requisitions filled in the first half of 2026?
+    tests: time to fill (FTE requisitions, by the date the offer was accepted)
+    # close to a worked example: the docs' time to fill query, for Q3 2026
+    gold_sql: |
+      select avg(days_to_fill) as average_days_to_fill
+      from `people-analytics-demo-2610.analytics.fct_requisitions`
+      where employment_type = 'fte'
+        and requisition_status = 'filled'
+        and closed_date between '2026-01-01' and '2026-06-30'
+    compare: {columns: [average_days_to_fill], tolerance: 0.05, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: 43.86 days over 83 requisitions (43.58 with contractor and intern
+    # openings, 43.28 for hires who started in the half)
+
+  - id: q14
+    difficulty: medium
+    question: What was the average tenure of our employees at the end of 2025, in years?
+    tests: tenure on a past date (from the current record's hire date); FTE filter
+    # close to a worked example: the docs' average tenure query, for 2026-09-30
+    gold_sql: |
+      select avg(date_diff(h.snapshot_date, e.hire_date, day)) / 365.25 as average_tenure_years
+      from `people-analytics-demo-2610.analytics.fct_headcount_daily` as h
+      join `people-analytics-demo-2610.analytics.dim_employee` as e using (employee_key)
+      where h.is_fte and h.snapshot_date = '2025-12-31'
+    compare: {columns: [average_tenure_years], tolerance: 0.05, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: 2.52 years (2.44 with contractors and interns, 2.03 with
+    # date_diff(..., year), which counts calendar years crossed)
+
+  # ---------------------------------------------------------------- hard
+
+  - id: q15
+    difficulty: hard
+    question: How many employees were in Sales on 1 January 2025?
+    tests: SCD version valid on a date (department then, not today's); FTE filter
+    gold_sql: |
+      select countif(h.is_fte) as headcount
+      from `people-analytics-demo-2610.analytics.fct_headcount_daily` as h
+      join `people-analytics-demo-2610.analytics.dim_org` as o using (department_id)
+      where h.snapshot_date = '2025-01-01' and o.division_name = 'Sales'
+    compare: {columns: [headcount], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: 99 (102 using each person's latest department, or with
+    # contractors; 121 in Sales today)
+
+  - id: q16
+    difficulty: hard
+    question: What was first-year attrition in 2025, meaning the attrition rate among employees with less than a year of tenure?
+    tests: attrition for a tenure band (exits under a year of tenure / average headcount under a year of tenure)
+    gold_sql: |
+      with leavers as (
+          select count(*) as exits
+          from `people-analytics-demo-2610.analytics.fct_terminations`
+          where termination_date between '2025-01-01' and '2025-12-31'
+            and tenure_days_at_exit < 365
+      ),
+      headcount as (
+          select count(*) / count(distinct h.snapshot_date) as average_headcount
+          from `people-analytics-demo-2610.analytics.fct_headcount_daily` as h
+          join `people-analytics-demo-2610.analytics.dim_employee` as e using (employee_key)
+          where h.is_fte
+            and h.snapshot_date between '2025-01-01' and '2025-12-31'
+            and date_diff(h.snapshot_date, e.hire_date, day) < 365
+      )
+      select exits / average_headcount as first_year_attrition_rate
+      from leavers, headcount
+    # Where "a year" ends (365 days, 365.25 days or the anniversary) moves the rate by up to 0.0005,
+    # so the tolerance is twice the usual.
+    compare: {columns: [first_year_attrition_rate], tolerance: 0.001, rate: true, order_matters: false}
+    # answer on 2026-10-11 data: 0.1931 (27 exits / 139.9 average first-year FTEs; 0.0546 against
+    # the whole company's average headcount; 35% of 2025's exits were first-year)
+
+  - id: q17
+    difficulty: hard
+    question: Between October 2023 and September 2026, how many different people left the company? Someone who left, was rehired and left again counts once.
+    tests: count people not events (a rehire gets a new employee_id; person_id links them)
+    gold_sql: |
+      select count(distinct person_id) as people_who_left
+      from `people-analytics-demo-2610.analytics.fct_terminations`
+      where termination_date between '2023-10-01' and '2026-09-30'
+    compare: {columns: [people_who_left], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: 215 (217 exits; 300 with contractors and interns)
+
+  - id: q18
+    difficulty: hard
+    question: Which division had the highest attrition rate in fiscal year 2026, and what was it?
+    tests: fiscal year naming (FY2026 = April 2025 to March 2026); division, not team; per-division average headcount
+    gold_sql: |
+      with leavers as (
+          select o.division_name, count(*) as exits
+          from `people-analytics-demo-2610.analytics.fct_terminations` as t
+          join `people-analytics-demo-2610.analytics.dim_org` as o using (department_id)
+          where t.termination_date between '2025-04-01' and '2026-03-31'
+          group by o.division_name
+      ),
+      headcount as (
+          select o.division_name, count(*) / count(distinct h.snapshot_date) as average_headcount
+          from `people-analytics-demo-2610.analytics.fct_headcount_daily` as h
+          join `people-analytics-demo-2610.analytics.dim_org` as o using (department_id)
+          where h.is_fte and h.snapshot_date between '2025-04-01' and '2026-03-31'
+          group by o.division_name
+      )
+      select division_name as division, exits / average_headcount as attrition_rate
+      from leavers
+      join headcount using (division_name)
+      order by attrition_rate desc
+      limit 1
+    compare: {columns: [division, attrition_rate], tolerance: 0.0005, rate: true, order_matters: false}
+    # answer on 2026-10-11 data: Product, 0.1858 (8 exits / 43.0 average FTEs; by department_name,
+    # team Engineering - Security leads with 0.1879; April 2026 to date, Engineering leads)
+
+  - id: q19
+    difficulty: hard
+    question: How many employees were at level L5 or above at the end of 2024?
+    tests: SCD version valid on a date (level then, not today's); FTE filter
+    gold_sql: |
+      select countif(is_fte) as headcount
+      from `people-analytics-demo-2610.analytics.fct_headcount_daily`
+      where snapshot_date = '2024-12-31' and job_level_number >= 5
+    compare: {columns: [headcount], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-11 data: 57 (77 using the same people's latest level)
+
+  # q20 was written as hard, but with the docs it is the worked funnel example grouped by source.
+
+  - id: q20
+    difficulty: medium
+    question: Rank our recruiting sources by the share of their 2025 applications that led to a hire.
+    tests: funnel conversion for a finished cohort (applied in 2025, offer accepted); FTE filter; ranking
+    # close to a worked example: the docs' funnel query uses the same 2025 cohort and filter
+    gold_sql: |
+      select source, countif(reached_hired) / count(*) as application_to_hire_rate
+      from `people-analytics-demo-2610.analytics.fct_application_funnel`
+      where employment_type = 'fte'
+        and applied_date between '2025-01-01' and '2025-12-31'
+      group by source
+      order by application_to_hire_rate desc
+    compare: {columns: [source, application_to_hire_rate], tolerance: 0.0005, rate: true, order_matters: true}
+    # answer on 2026-10-11 data: Referral 0.0252, Agency 0.0244, LinkedIn 0.0158, Careers Site 0.0103,
+    # Job Board 0.0075 (with contractor and intern roles Referral is 0.0263)

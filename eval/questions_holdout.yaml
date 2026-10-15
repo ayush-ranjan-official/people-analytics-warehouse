@@ -1,0 +1,149 @@
+# Held-out text-to-SQL questions: written after the doc fixes, to test the other side of each new rule.
+#
+# The documented context was fixed by reading Run B's misses on eval/questions.yaml, so Run C's score
+# on those 20 questions is in-sample. Every one of the 20 is FTE-only and asks for a whole division,
+# so a rule that always applied the FTE filter or always grouped by division could only gain there.
+# These 8 questions ask for contractors and interns by name, for Engineering's teams, and for
+# per-group rates (CTE-heavy queries), next to two that follow the rules as usual (h05, h08).
+# Same format and comparison as eval/questions.yaml. Run with:
+#   python eval/run_eval.py --run documented --questions eval/questions_holdout.yaml
+#   python eval/run_eval.py --run improved --questions eval/questions_holdout.yaml
+# Answers are recorded as of reporting date 2026-10-12, each checked against a second query written
+# a different way (dim_employee versions with dim_date day counts instead of fct_headcount_daily,
+# closed_date is null for open requisitions, the funnel's accepted offers for filled requisitions).
+# Mix: 2 easy, 3 medium, 3 hard.
+
+questions:
+
+  - id: h01
+    difficulty: easy
+    question: How many interns did we have on 15 July 2026?
+    tests: interns asked for by name, so no FTE filter; headcount on a date
+    gold_sql: |
+      select countif(employment_type = 'intern') as interns
+      from `people-analytics-demo-2610.analytics.fct_headcount_daily`
+      where snapshot_date = '2026-07-15'
+    compare: {columns: [interns], tolerance: 0, rate: false, order_matters: false}
+    # answer: 10 (579 FTEs and 614 people in all that day)
+
+  - id: h02
+    difficulty: easy
+    question: How many contractor requisitions are open right now?
+    tests: contractor openings asked for by name; requisition status
+    gold_sql: |
+      select count(*) as open_contractor_requisitions
+      from `people-analytics-demo-2610.analytics.fct_requisitions`
+      where employment_type = 'contractor' and requisition_status = 'open'
+    compare: {columns: [open_contractor_requisitions], tolerance: 0, rate: false, order_matters: false}
+    # answer on 2026-10-12 data: 4 (15 FTE openings, 19 in all)
+
+  - id: h03
+    difficulty: medium
+    question: What share of everyone working for us today is a contractor? Count employees, contractors and interns.
+    tests: all employment types in the denominator; reporting date not current_date
+    gold_sql: |
+      select countif(employment_type = 'contractor') / count(*) as contractor_share
+      from `people-analytics-demo-2610.analytics.fct_headcount_daily`
+      where snapshot_date = (
+          select reporting_date from `people-analytics-demo-2610.analytics.int_reporting_date`
+      )
+    compare: {columns: [contractor_share], tolerance: 0.0005, rate: true, order_matters: false}
+    # answer on 2026-10-12 data: 0.0340 (21 of 617; 0.0352 against FTEs only)
+
+  - id: h04
+    difficulty: medium
+    question: Which Engineering team had the most exits in Q3 2026, and how many?
+    tests: teams are department_name within the Engineering division
+    gold_sql: |
+      select o.department_name as team, count(*) as exits
+      from `people-analytics-demo-2610.analytics.fct_terminations` as t
+      join `people-analytics-demo-2610.analytics.dim_org` as o using (department_id)
+      where o.division_name = 'Engineering'
+        and t.termination_date between '2026-07-01' and '2026-09-30'
+      group by o.department_name
+      order by exits desc
+      limit 1
+    compare: {columns: [team, exits], tolerance: 0, rate: false, order_matters: false}
+    # answer: Engineering - Platform, 8 (Data 4, Security 1; the whole division 13)
+
+  - id: h05
+    difficulty: medium
+    question: Which division filled the most requisitions in the first half of 2026, and how many?
+    tests: division, not team; FTE requisitions; filled on closed_date (offer accepted)
+    gold_sql: |
+      select o.division_name as division, count(*) as filled_requisitions
+      from `people-analytics-demo-2610.analytics.fct_requisitions` as r
+      join `people-analytics-demo-2610.analytics.dim_org` as o using (department_id)
+      where r.employment_type = 'fte'
+        and r.requisition_status = 'filled'
+        and r.closed_date between '2026-01-01' and '2026-06-30'
+      group by o.division_name
+      order by filled_requisitions desc
+      limit 1
+    compare: {columns: [division, filled_requisitions], tolerance: 0, rate: false, order_matters: false}
+    # answer: Engineering, 29 (37 with contractor and intern openings; by department_name, Product
+    # and Sales tie at 15)
+
+  - id: h06
+    difficulty: hard
+    question: How many contractors left the company in 2025?
+    tests: contractors asked for by name; fct_terminations is FTE-only, so ended contractor records come from dim_employee, one per employee_id
+    gold_sql: |
+      select count(distinct employee_id) as contractors_left
+      from `people-analytics-demo-2610.analytics.dim_employee`
+      where employment_type = 'contractor'
+        and termination_date between '2025-01-01' and '2025-12-31'
+    compare: {columns: [contractors_left], tolerance: 0, rate: false, order_matters: false}
+    # answer: 20 (23 counting job versions; 77 FTE exits in fct_terminations)
+
+  - id: h07
+    difficulty: hard
+    question: What was the attrition rate of each of Engineering's three teams in fiscal year 2026?
+    tests: team-level rates (department_name, not division); fiscal year; per-team average headcount; CTE naming
+    gold_sql: |
+      with team_exits as (
+          select o.department_name, count(*) as exit_count
+          from `people-analytics-demo-2610.analytics.fct_terminations` as t
+          join `people-analytics-demo-2610.analytics.dim_org` as o using (department_id)
+          where o.division_name = 'Engineering' and o.is_team
+            and t.termination_date between '2025-04-01' and '2026-03-31'
+          group by o.department_name
+      ),
+      team_headcount as (
+          select o.department_name, count(*) / count(distinct h.snapshot_date) as average_headcount
+          from `people-analytics-demo-2610.analytics.fct_headcount_daily` as h
+          join `people-analytics-demo-2610.analytics.dim_org` as o using (department_id)
+          where h.is_fte and o.division_name = 'Engineering' and o.is_team
+            and h.snapshot_date between '2025-04-01' and '2026-03-31'
+          group by o.department_name
+      )
+      select x.department_name as team, x.exit_count / c.average_headcount as attrition_rate
+      from team_exits as x
+      join team_headcount as c using (department_name)
+    compare: {columns: [team, attrition_rate], tolerance: 0.0005, rate: true, order_matters: false}
+    # answer: Engineering - Security 0.1879 (6 / 31.9), Engineering - Data 0.1691 (9 / 53.2),
+    # Engineering - Platform 0.1537 (14 / 91.1); the whole division 29 / 177.2
+
+  - id: h08
+    difficulty: hard
+    question: What was the regretted attrition rate in each location in fiscal year 2026?
+    tests: regretted exits over each location's average FTE headcount; fiscal year; CTE naming
+    gold_sql: |
+      with location_exits as (
+          select location, countif(regretted_flag) as regretted_exits
+          from `people-analytics-demo-2610.analytics.fct_terminations`
+          where termination_date between '2025-04-01' and '2026-03-31'
+          group by location
+      ),
+      location_headcount as (
+          select location, count(*) / count(distinct snapshot_date) as average_headcount
+          from `people-analytics-demo-2610.analytics.fct_headcount_daily`
+          where is_fte and snapshot_date between '2025-04-01' and '2026-03-31'
+          group by location
+      )
+      select location, x.regretted_exits / c.average_headcount as regretted_attrition_rate
+      from location_exits as x
+      join location_headcount as c using (location)
+    compare: {columns: [location, regretted_attrition_rate], tolerance: 0.0005, rate: true, order_matters: false}
+    # answer: New York 0.0426 (5 / 117.3), Singapore 0.0352, London 0.0331, Bengaluru 0.0210,
+    # Remote 0.0167

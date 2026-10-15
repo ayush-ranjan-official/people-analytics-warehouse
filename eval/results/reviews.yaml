@@ -1,0 +1,11 @@
+# Verdicts from reading results by hand, where they differ from the harness's, keyed by results file
+# name. eval/run_eval.py prints each file's score as judged and after review. Every pass and miss of
+# every run in this folder was read; only these rows needed a different verdict.
+
+documented-20261015-1115:
+  q04:
+    status: fail
+    reason: >-
+      Hedge. The answer column, open_reqs = 19, counts every employment type; the FTE count (15) is in
+      an extra column the model added "for reference". The comparator ignores extra columns, so it
+      matched the 15.

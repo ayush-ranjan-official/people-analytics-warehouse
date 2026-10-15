@@ -74,13 +74,16 @@ Table: `analytics.dim_employee`
 
 ## dim_org
 
-- Grain: one row per department or team (11 rows).
+- Grain: one row per department or team (11 rows), rolling up to 8 divisions (Engineering,
+  Product, Sales, Marketing, People, Finance, Legal, Operations).
 - Primary key: department_id.
 - Use for: naming and grouping departments; rolling teams up to their division.
 - Join: department_id from dim_employee or any fact.
 - Gotcha: Engineering is split into three teams (Platform, Data, Security) under a parent row named
-  'Engineering' that holds only the head of Engineering. For all of Engineering filter
-  division_name = 'Engineering'; department_name = 'Engineering' finds one person.
+  'Engineering' that holds only the head of Engineering, so department_name lists Engineering as
+  four rows. For all of Engineering, or any figure by division, use division_name;
+  department_name = 'Engineering' finds one person. In Looker and Data Studio department_name is
+  the Department field and division_name the Division field.
 
 Table: `analytics.dim_org`
 
@@ -92,7 +95,7 @@ Table: `analytics.dim_org`
 | name_corrected_in_warehouse | BOOL | True if department_name was corrected by the warehouse's mapping seed. Should be false everywhere; true means the HRIS needs fixing. |
 | parent_department_id | STRING | The department a team belongs to. Null for a top-level department. |
 | parent_department_name | STRING | Name of the parent department. Null for a top-level department. |
-| division_name | STRING | The top-level department this row rolls up to (the parent's name for a team, its own name otherwise). Use it to group a whole function. |
+| division_name | STRING | The division this row rolls up to, i.e. the top-level department (the parent's name for a team, its own name otherwise). Use it to group a whole function, e.g. all of Engineering. |
 | cost_center | STRING | Finance cost centre code. |
 | is_team | BOOL | True if no other department sits under it, i.e. people are assigned here. False only for a parent that groups teams (Engineering). |
 
@@ -107,8 +110,9 @@ Table: `analytics.dim_org`
 - Excludes: double submissions (only the first application per candidate and requisition is kept).
 - Gotcha: hired_at and reached_hired mean the offer was accepted, not that the person has started
   (fct_hires.hire_date is the start). Contractor and intern openings are included; filter
-  employment_type = 'fte' to match fct_hires. For conversion rates use applications old enough to
-  have finished, because recent ones are still in progress.
+  employment_type = 'fte' for any recruiting figure unless those roles are asked for (this also
+  matches fct_hires). For conversion rates use applications old enough to have finished, because
+  recent ones are still in progress.
 
 Table: `analytics.fct_application_funnel`
 
@@ -122,7 +126,7 @@ Table: `analytics.fct_application_funnel`
 | applied_date | DATE | Day the application was submitted. |
 | current_stage | STRING | Latest stage reached. In progress, 'applied', 'screen', 'interview' or 'offer'; finished, 'hired', 'rejected', 'withdrawn' or 'offer_declined'. |
 | is_closed | BOOL | True once the application has finished (hired, rejected, withdrawn or offer declined). |
-| employment_type | STRING | What the requisition is for: 'fte', 'contractor' or 'intern'. |
+| employment_type | STRING | What the requisition is for: 'fte', 'contractor' or 'intern'. Recruiting figures count fte only, unless contractor or intern roles are asked for. |
 | hired_employee_id | STRING | employee_id of the hire, once they have started. Null otherwise. |
 | applied_at | TIMESTAMP | When the application was submitted (UTC). |
 | screened_at | TIMESTAMP | When it reached the screen stage. Null if it never did. |
@@ -214,8 +218,9 @@ Table: `analytics.fct_hires`
   replacement hiring versus new seats.
 - Join: req_id to fct_application_funnel and fct_hires; department_id to dim_org;
   hired_employee_id to dim_employee.employee_id.
-- Excludes: nothing. Contractor and intern openings are included; filter employment_type = 'fte'
-  to match fct_hires.
+- Excludes: nothing. Contractor and intern openings are included, but requisition figures (open,
+  filled or cancelled counts, time to fill) are for FTE openings: filter employment_type = 'fte'
+  unless contractor or intern roles are asked for. This also matches fct_hires.
 - Gotcha: a filled requisition's closed_date is when the offer was accepted, not the start date.
 
 Table: `analytics.fct_requisitions`
@@ -231,7 +236,7 @@ Table: `analytics.fct_requisitions`
 | opened_date | DATE | Day the requisition was opened. |
 | closed_date | DATE | Day it was filled (offer accepted) or cancelled. Null while open. |
 | requisition_status | STRING | 'open', 'filled' or 'cancelled'. |
-| employment_type | STRING | What the opening is for: 'fte', 'contractor' or 'intern'. |
+| employment_type | STRING | What the opening is for: 'fte', 'contractor' or 'intern'. Recruiting figures count fte only, unless contractor or intern roles are asked for. |
 | is_backfill | BOOL | True if the seat existed before the requisition opened (replacing someone who left or moved); false for a new seat. |
 | days_to_fill | INT64 | Days from opening to the offer being accepted. Null unless filled. |
 | applicant_count | INT64 | Number of applications received (duplicates removed). |
@@ -281,17 +286,23 @@ Every example number was produced by the query shown, on the synthetic data as o
 
 ## Rules that apply to every metric
 
-- **FTEs only.** Headcount, attrition and hiring metrics count full-time employees: `is_fte` in
-  `fct_headcount_daily`, `employment_type = 'fte'` in `dim_employee`, `fct_requisitions` and
-  `fct_application_funnel`. `fct_hires` and `fct_terminations` are already FTE-only. Contractors and
-  interns are excluded because a contract or internship ending is planned, not attrition.
+- **FTEs only.** Every workforce and recruiting figure counts full-time employees and FTE openings,
+  from plain counts (employees, exits, hires, requisitions, applications) to rates, unless contractors
+  or interns are asked for by name: `is_fte` in `fct_headcount_daily`, `employment_type = 'fte'` in
+  `dim_employee`, `fct_requisitions` and `fct_application_funnel`. `fct_hires` and
+  `fct_terminations` are already FTE-only. Contractors and interns are excluded because their work is
+  fixed-term: a contract or internship ending is planned, not attrition.
 - **"Today" is the reporting date**, not the calendar date. The data covers up to the HR system's
   latest business day: `select reporting_date from analytics.int_reporting_date`, the same as
   `max(snapshot_date)` in `fct_headcount_daily`. End any period at that date at the latest.
 - **Events, not people.** A rehired person has two `employee_id`s with one `person_id`. Rates count
   events (exits, hires). To count people, use `count(distinct person_id)`.
-- **Whole departments** are grouped with `dim_org.division_name`. Engineering's teams sit under a
-  parent row that holds only the head of Engineering.
+- **Divisions and teams.** `dim_org.division_name` is the division, one of 8 top-level departments
+  (Engineering, Product, Sales, Marketing, People, Finance, Legal, Operations): use it for any figure
+  by division and for all of Engineering. `department_name` is the department or team a person is
+  assigned to. It lists Engineering as three teams plus a parent row that holds only the head of
+  Engineering, so `department_name = 'Engineering'` finds one person. In Looker and Data Studio,
+  `department_name` is the Department field and `division_name` the Division field.
 - **Fiscal year** runs April to March and is named after the year it ends: FY2027 is 2026-04-01 to
   2027-03-31 (`dim_date.fiscal_year`, `fiscal_quarter`).
 - **Salaries** are in local currency (`currency`). Never sum or average `salary_local` across
@@ -328,19 +339,24 @@ where is_fte and snapshot_date between '2026-07-01' and '2026-09-30'
 Exits in the period ÷ average headcount in the period.
 
 ```sql
-with exits as (
+with period_exits as (
     select count(*) as exits
     from analytics.fct_terminations
     where termination_date between '2026-07-01' and '2026-09-30'
 ),
-headcount as (
+period_headcount as (
     select count(*) / count(distinct snapshot_date) as average_headcount
     from analytics.fct_headcount_daily
     where is_fte and snapshot_date between '2026-07-01' and '2026-09-30'
 )
-select exits, average_headcount, round(100 * exits / average_headcount, 2) as attrition_rate_pct
-from exits, headcount
+select e.exits, h.average_headcount, round(100 * e.exits / h.average_headcount, 2) as attrition_rate_pct
+from period_exits as e
+cross join period_headcount as h
 ```
+
+Give each CTE a name that none of its columns has, and qualify the columns: in BigQuery a bare name
+that matches a table in the `from` clause means that table's whole row (a STRUCT), so with a CTE
+named `exits`, `100 * exits` fails.
 
 **Example:** Q3 2026 → 24 ÷ 584.4 = **4.11%**. Annualised (× 365 ÷ 92) that is about 16.3%.
 For Engineering, filter both parts on `division_name = 'Engineering'` (join `dim_org` on
@@ -372,8 +388,11 @@ join analytics.dim_employee as e using (employee_key)
 where h.is_fte and h.snapshot_date = '2026-09-30'
 ```
 
-**Example:** 2026-09-30 → **2.76 years** (median 2.21). Tenure *at exit* uses
-`fct_terminations.tenure_days_at_exit / 365.25`: the Q3 2026 leavers averaged 2.03 years.
+**Example:** 2026-09-30 → **2.76 years**. The exact median is 2.23 years:
+`percentile_cont(date_diff(h.snapshot_date, e.hire_date, day), 0.5) over () / 365.25` (with
+`select distinct`, as it's an analytic function). `approx_quantiles` is approximate and can be off by
+a few weeks on 595 people. Tenure *at exit* uses `fct_terminations.tenure_days_at_exit / 365.25`: the
+Q3 2026 leavers averaged 2.03 years.
 
 ## Time to fill
 

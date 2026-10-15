@@ -113,8 +113,12 @@ migration-check: check-env check-inventory ## The inventory check, then the Visi
 validate-lookml: ## Offline LookML checks: parse, field references, mart columns, joins, fanout, dashboards (STRICT=1 fails on warnings)
 	$(RUN) python scripts/validate_lookml.py $(if $(STRICT),--strict)
 
-eval: ## (Phase 8) Run the text-to-SQL evaluation
-	@echo "Not implemented yet: Phase 8"; exit 1
+# ---------------------------------------------------------------- Phase 8: text-to-SQL eval
+# EVAL names the run because RUN is the command prefix above (RUN=bare on the command line would replace it).
+EVAL_MODE = $(if $(CANARY),--canary,$(if $(RESCORE),--rescore $(RESCORE),--run $(EVAL) $(if $(ONLY),--only $(ONLY))))
+eval: check-env ## Text-to-SQL eval: EVAL=bare|documented|improved [ONLY=q01,q02] [QUESTIONS=file] [CONTEXT=file]; CANARY=1; RESCORE=file.jsonl
+	@test -n "$(CANARY)$(RESCORE)" || test -n "$(filter $(EVAL),bare documented improved)" || { echo "Set EVAL=bare, EVAL=documented or EVAL=improved, CANARY=1, or RESCORE=<results .jsonl>"; exit 1; }
+	$(RUN) python eval/run_eval.py $(EVAL_MODE) $(if $(QUESTIONS),--questions $(QUESTIONS)) $(if $(CONTEXT),--context $(CONTEXT))
 
 docs: check-env dbt/dbt_packages ## dbt docs for the analytics dataset, the agent's schema context (eval/), and a 100% coverage check
 	$(DBT) docs generate $(DBT_DIRS) --target prod --static
