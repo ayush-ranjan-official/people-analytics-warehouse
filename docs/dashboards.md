@@ -269,8 +269,8 @@ Then check the following:
   Recruiting page, over the default four quarters, Offers accepted reads 64.
 - **Date range 2025-01-01 to 2025-12-31, Division cleared:** the Funnel by source summary row should
   read 11,252 applications, then 2,833 screened, 931 interviewed, 209 offered and 159 accepted.
-- **The two "today" tiles** move every night and ignore the date range control. On reporting date
-  2026-10-14 they read 596 FTEs and 2.78 years.
+- **The two "today" tiles** ignore the date range control. On reporting date 2026-10-14, with the
+  warehouse rebuilt from Fivetran's landing data, they read 597 FTEs and 2.77 years.
 
 The built report passed all three checks on 2026-10-15.
 
