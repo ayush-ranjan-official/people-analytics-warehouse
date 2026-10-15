@@ -5,24 +5,24 @@ Two BI layers read the same `analytics` dataset, and both use the formulas in
 
 | | LookML | Data Studio |
 | --- | --- | --- |
-| What | The semantic layer: views, explores, measures and one dashboard, in [lookml/](../lookml/) | The live dashboard "HR Overview - Nodewell Labs (synthetic data)" |
+| What | The semantic layer: views, explores, measures and one dashboard, in [lookml/](../lookml/) | A four-page dashboard, "HR Overview - Nodewell Labs (synthetic data)": the spec and build guide below |
 | Reads | The marts | Three reporting views, `analytics.rpt_*` ([dbt/models/reporting/](../dbt/models/reporting/)) |
-| Runs on | Nothing yet. Looker has no free tier ([D7](decisions.md)), so it's validated offline with `make validate-lookml` | Data Studio (free), against the BigQuery sandbox |
+| Runs on | Looker, which has no free tier ([D7](decisions.md)), so here it's checked offline with `make validate-lookml` | Data Studio (free), against the BigQuery sandbox |
 | Good for | Any question the explores can answer. Looker handles the joins and fanout | The fixed pages and tiles below |
 
-LookML is where each metric is defined once and reviewed in git. A company that runs Looker would
-deploy it as it is. Data Studio is the free tool that shows the numbers live. It can't join
-tables safely: there's no fanout protection and no symmetric aggregates. So dbt shapes three reporting
-views for it, and the logic stays in the warehouse, where it's tested. The dbt exposure `hr_overview`
-puts the dashboard in the lineage: `dbt ls --select +exposure:hr_overview` lists every model it
-depends on.
+LookML is where each metric is defined once and reviewed in git. Data Studio is the free tool for a
+live dashboard. It can't join tables safely: there's no fanout protection and no symmetric
+aggregates. So dbt shapes three reporting views for it, and the logic stays in the warehouse, where
+it's tested. The dbt exposure `hr_overview` puts the dashboard in the lineage:
+`dbt ls --select +exposure:hr_overview` lists every model it depends on.
 
-Both layers give the same Q3 2026 numbers for the company and for a division (see
-[Verification](#verification)). The few places where they differ are listed at the end of this page.
+The SQL behind both layers gives the same Q3 2026 numbers for the company and for a division (see
+[Verification](#verification) and [Validate](#validate)). The few places where they differ are listed
+at the end of this page.
 
 ## Data Studio: HR Overview
 
-Four pages: Workforce, Attrition, Tenure and Recruiting. The build takes about 20 minutes.
+Four pages: Workforce, Attrition, Tenure and Recruiting. Allow about 20 minutes to build it.
 
 ### Before you start
 
@@ -36,9 +36,8 @@ Four pages: Workforce, Attrition, Tenure and Recruiting. The build takes about 2
 - Sign in to Data Studio with the Google account that owns `people-analytics-demo-2610`, not the dbt
   service account.
 - The project has no billing account ([D1](decisions.md)). Data Studio's BigQuery help says a billing
-  project is needed. The sandbox's free quotas should cover the queries, but this hasn't been tried
-  here yet. If Data Studio asks for a billing account, stop: billing is never turned on for this
-  project. Record the result in [platform-notes.md](platform-notes.md) either way.
+  project is needed. If Data Studio asks for a billing account, stop: billing is never turned on for
+  this project.
 
 ### 1. Connect the views (3 min)
 
@@ -260,10 +259,10 @@ through 2026-10-10, the tiles must show:
 Then check the following:
 
 - **Division = Engineering:** Average headcount 197.3, Exits 13, Attrition rate 6.59%.
-- **Date range 2025-01-01 to 2025-12-31, Division cleared:** the Funnel by source summary row reads
-  11,252 applications, then 2,833 screened, 931 interviewed, 209 offered and 159 accepted.
-- **The two "today" tiles** move every night. On reporting date 2026-10-10 they read 596 FTEs and
-  2.77 years.
+- **Date range 2025-01-01 to 2025-12-31, Division cleared:** the Funnel by source summary row should
+  read 11,252 applications, then 2,833 screened, 931 interviewed, 209 offered and 159 accepted.
+- **The two "today" tiles** move every night. On reporting date 2026-10-10 they should read 596 FTEs
+  and 2.77 years.
 
 This SQL computes the Workforce and Attrition tiles from the same view, for all divisions and for
 each division:
@@ -306,12 +305,12 @@ the views (`dbt_dev`).
 - **Every chart is its own BigQuery query.** It runs whenever the chart renders with a page, filter
   and date range it hasn't cached. Each query counts against the sandbox's 1 TiB a month of free
   query processing. The nightly dbt run draws on the same allowance.
-- **Measured costs:**
+- **Measured costs** (queries against the views in BigQuery):
   - A chart on Workforce daily processes about 2 MB but is billed about 100 MB. BigQuery bills at
     least 10 MB for each table a query reads, and that view reads about ten.
   - Charts on Exits and Recruiting funnel are billed about 30 MB each.
-  - One uncached pass through all four pages is about 2 GB, so 1 TiB covers roughly 500 full passes
-    a month.
+  - An uncached pass through all four pages would come to roughly 2 GB (estimated from these
+    per-chart costs), so 1 TiB covers about 500 passes a month.
 - **Caching:** Data Studio keeps each result for the data freshness interval (12 hours). Reopening
   the report with the same filters costs nothing. Each new filter value or date range sends new
   queries.
@@ -331,7 +330,7 @@ the views (`dbt_dev`).
 
   Drop the last line to see everything the project has run this month.
 
-### Known gaps
+### Limitations
 
 - **Open requisitions aren't on the dashboard.** The views hold flows (applications, exits), while open
   requisitions are a count as of today. Use the LookML recruiting explore or the SQL in
@@ -436,29 +435,30 @@ LookML in lookml:
   dashboards       8 tiles       0 errors, 0 warnings
 User attributes referenced:
   can_see_salary: access_grant can_see_salary in model people_analytics
-  department: access_filter on explore attrition; access_filter on explore headcount; access_filter on explore recruiting
+  division: access_filter on explore attrition; access_filter on explore headcount; access_filter on explore recruiting
 LookML OK: 8 views, 3 explores, 8 dashboard tiles, 0 errors (0 warnings)
 ```
 
 What it can't check: Looker's own compile of filter expressions, and how tiles render. The SQL Looker
 would generate for the `headcount` and `recruiting` explores was run by hand against `analytics`. It
-gives the same Q3 2026 numbers as the dashboard:
+gives the same Q3 2026 numbers as the reporting views ([Verification](#verification)):
 
 - company: average headcount 584.4, 24 leavers, 4.11%;
 - Engineering: 197.3, 13 leavers, 6.59%.
 
-Where LookML and the Data Studio report differ:
+Where the LookML model and the Data Studio spec differ:
 
 - **Average headcount on a sparse slice:** Data Studio divides FTE days by every day in the range.
   LookML's `avg_headcount` divides by the days that have FTE rows in the selection, so on a slice
   with nobody in it on some days it reads high and its rates read low. In the current data the
   company and any single division, department or location have FTEs every day, so the two agree
   there. Example, Q3 2026, Engineering - Data, Singapore, under a year (FTEs on 49 of 92 days): 1.07
-  in Data Studio, 2.0 in LookML. Over 2025-10-01 to 2026-09-30, Legal, Remote, 1-3 years has 1 exit:
-  173% in Data Studio, 100% in LookML.
+  by the Data Studio spec's formula (`SUM(headcount) / COUNT_DISTINCT(snapshot_date)` on
+  `rpt_workforce_daily`), 2.0 by LookML's. Over 2025-10-01 to 2026-09-30, Legal, Remote, 1-3 years has
+  1 exit: 173% by the Data Studio formula, 100% by LookML's.
 - **Tenure band labels:** 'Under 1 year' in LookML, '< 1 year' in Data Studio. The cut-offs are the
   same.
 - **Time to fill:** in LookML it's a mean only, because Looker's symmetric aggregates don't cover
-  medians over the fanned-out requisition rows. Data Studio also has the median, because
+  medians over the fanned-out requisition rows. The Data Studio spec also has the median, because
   `days_to_fill` is set only on the accepted application.
-- **Open requisitions:** LookML has them; the Data Studio report doesn't.
+- **Open requisitions:** LookML has them; the Data Studio spec doesn't include them.

@@ -49,8 +49,9 @@ production the extra hop goes away by pointing Fivetran's destination at BigQuer
 stuck loader shows up as stale data, just like a stuck Fivetran sync would.
 
 **Bootstrap mode.** `make ingest SOURCE=direct` copies the source tables straight into `raw_hris`,
-adding the two Fivetran columns itself (nothing deleted; synced = load time). It exists so the
-warehouse can be built and tested before the Fivetran connection is live. Every BigQuery table is
+adding the two Fivetran columns itself (nothing deleted; synced = load time). It let the warehouse be
+built and tested before the Fivetran connection went live, and is kept for rebuilding from scratch.
+Every BigQuery table is
 labelled with its origin (`load_source = direct` or `fivetran`), and switching back to Fivetran
 reloads every table.
 
@@ -63,7 +64,7 @@ called `hris`.
 
 **Why not Google Sheets.**
 - The pipeline has to show how schema drift and sync failures from a source system are handled.
-  A database connection with change data capture makes all five Phase 6 drills real:
+  A database connection with change data capture makes all five drills real:
   - add a column
   - rename a column
   - change a column's type
@@ -79,7 +80,7 @@ called `hris`.
   and Job User only. Its key lives outside the repo (permissions 600). The dbt profile authenticates only
   with that key, never with a personal Google login.
 - **Fivetran** gets a dedicated `fivetran` login on the source and another on the landing database, so
-  the Phase 6 "rotate the credential" and "stop one table" drills break Fivetran without breaking anything
+  the "rotate the credential" and "stop one table" drills break Fivetran without breaking anything
   else. They are separate logins, but not least-privilege: on Neon, only roles created in the console can
   have REPLICATION, and those roles are members of `neon_superuser` (which can read every table). That's
   why the "stop one table" drill removes the table from the replication publication instead of revoking
@@ -112,20 +113,18 @@ billing enabled, the left-hand column is the design to use.
 ## D7. Semantic layer and BI: LookML in the repo, Data Studio for live dashboards
 *2026-10-14*
 
-Looker has no free self-serve tier for your own data. So:
+Looker has no free tier for your own data. So:
 - **LookML:** the views, explores and dashboard are written as LookML in `lookml/` and validated offline
   (parse, field references, every measure documented).
-- **Looker IDE practice:** Google Cloud Skills Boost LookML labs that are marked "No cost". They run on
-  Google's sample data, not ours.
 - **Live dashboards:** Data Studio (Looker Studio's name since 2026), reading three dbt reporting views
   over the marts (`analytics.rpt_*`, see [dashboards.md](dashboards.md)). It is free. The views hold
   additive counts on a dense daily grid, so rates are calculated fields that stay right under any
-  filter. Whether it connects to a sandbox dataset with no billing account is still to be tried.
+  filter.
 
 ## D8. The text-to-SQL eval calls Claude through the Claude Code CLI
 *2026-10-14*
 
-The eval (Phase 8) sends each question to Claude in a fresh, tool-less session through the Claude Code
+The eval sends each question to Claude in a fresh, tool-less session through the Claude Code
 CLI, which runs on a subscription instead of per-call API billing. `ANTHROPIC_API_KEY` is left unset:
 if it were present, the CLI would switch to API billing.
 
@@ -146,5 +145,6 @@ what was loaded, rather than silently mixing two histories.
 **Source-system realism.**
 - Tables have primary keys (needed for replication) but no foreign keys or check constraints, like
   many real source systems.
-- Known data-quality problems are planted deliberately (`generator/PLANTED_ISSUES.md`) so the
-  warehouse tests catch real issues at the source.
+- Known data-quality problems were planted deliberately (`generator/PLANTED_ISSUES.md`) so the
+  warehouse tests catch real issues at the source; after the fix, planting was switched off
+  (`planted_issues.enabled: false`).

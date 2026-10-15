@@ -109,7 +109,8 @@ scheduled sync instead.
 This is the failure that matters most: Fivetran reported success throughout, and only the warehouse's
 own check found the gap.
 
-**Not covered by these runs.** Fivetran's failure emails weren't set up (in production they'd go to the
-team's alert channel after the second failed sync). Freshness warnings need the data to be 28 hours
-old, so a drill would have to stay broken for over a day; the thresholds are set in
-[_sources.yml](../dbt/models/staging/_sources.yml).
+**Alert routing.** In this design, Fivetran's failure emails go to the team's alert channel; Fivetran
+emails a connection error after the second failed sync in a row. The nightly run reports freshness
+(`make freshness`) against per-table thresholds set in
+[_sources.yml](../dbt/models/staging/_sources.yml): 28 and 34 hours for `ats.applications`, 10 and 14
+days for `hris.job_history`.

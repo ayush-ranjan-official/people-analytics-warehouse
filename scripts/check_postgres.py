@@ -2,7 +2,7 @@
 
 For each one: creates a scratch table, inserts a row, reads it back, then drops the table.
 Reads POSTGRES_URL (source) and LANDING_POSTGRES_URL (Fivetran's landing database) from the
-environment, or from .env when run directly. The landing database is optional until Phase 2.
+environment, or from .env when run directly. The landing database is skipped when LANDING_POSTGRES_URL is unset.
 """
 
 import os

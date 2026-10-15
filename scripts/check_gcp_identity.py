@@ -1,4 +1,4 @@
-"""Phase 0 guard: make sure we are talking to the right GCP project with the right key.
+"""Guard: make sure we are talking to the right GCP project with the right key.
 
 Offline checks on BQ_KEYFILE (an absolute path to a service-account key for GCP_PROJECT_ID,
 outside the repo), then online checks with that key: the three datasets exist in BQ_LOCATION,

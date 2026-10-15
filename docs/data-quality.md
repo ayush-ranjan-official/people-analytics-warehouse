@@ -1,7 +1,7 @@
 # Data quality: caught at the source, fixed at the source
 
-The source system ships with four known problems ([generator/PLANTED_ISSUES.md](../generator/PLANTED_ISSUES.md)),
-planted so the warehouse tests have something real to catch. All four were caught by tests on the raw
+The source system shipped with four known problems ([generator/PLANTED_ISSUES.md](../generator/PLANTED_ISSUES.md)),
+planted so the warehouse tests had something real to catch. All four were caught by tests on the raw
 and staging layers, before any mart was built. They were then fixed **in the source system**, not
 patched over in the warehouse, so every downstream consumer gets the corrected data.
 
@@ -33,12 +33,12 @@ The fixes are a reviewed SQL patch, [generator/fix_source.sql](../generator/fix_
    patch restored the true dates rather than plausible ones.
 4. **Orphan exit records:** removed. No employee matches them, so they can't be attributed to anyone.
 
-Because the fixes are ordinary updates and deletes in the source, they reach BigQuery through the
-normal sync: Fivetran records the deletes as `_fivetran_deleted = true`, and staging filters those out.
+Because the fixes are ordinary updates and deletes in the source, they reach BigQuery like any other
+source change: through Fivetran a delete lands as `_fivetran_deleted = true`, which staging filters out.
 The generator was then switched to stop planting the issues (`planted_issues.enabled: false`), so
 regenerated data is clean too.
 
 ## Result
 
-`dbt build` after the fix: every check passed. The same tests stay in place, so a recurrence fails the
-nightly build instead of reaching a dashboard.
+`dbt build` after the fix: every check passed. The same tests stay in place: a recurrence turns the
+nightly run red the same night, and `make dbt-build` stops before any mart is rebuilt from it.

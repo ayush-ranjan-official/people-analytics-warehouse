@@ -9,10 +9,11 @@ copies each table across as it is, including Fivetran's `_fivetran_synced` and `
 columns, plus a `_loaded_at` timestamp. Columns and types are read from Postgres on every run, so a
 column Fivetran adds or retypes reaches BigQuery with the next load.
 
-`--source direct` is a stand-in for when the Fivetran connection isn't live: it reads the source
-schema `hris` and adds the two Fivetran columns itself (nothing deleted, synced = load time), so
-everything downstream can be built and tested. Each BigQuery table is labelled with where its data
-came from (`load_source`), and switching back to Fivetran reloads every table.
+`--source direct` is the bootstrap load, used before the Fivetran connection went live and kept for
+rebuilding from scratch: it reads the source schema `hris` and adds the two Fivetran columns itself
+(nothing deleted, synced = load time), so everything downstream can be built and tested. Each
+BigQuery table is labelled with where its data came from (`load_source`), and switching back to
+Fivetran reloads every table.
 
 Sandbox rules it follows:
 - tables are never partitioned (the sandbox drops date partitions older than 60 days);
@@ -135,8 +136,7 @@ class Origin:
 
     def description(self, table: str) -> str:
         if self.direct:
-            return (f"Bootstrap copy of source table {SOURCE_SCHEMA}.{table}, with Fivetran-style columns added; "
-                    "a stand-in until the Fivetran connection is live.")
+            return f"Bootstrap copy of source table {SOURCE_SCHEMA}.{table}, with Fivetran-style columns added."
         return f"Copy of landing table {LANDING_SCHEMA}.{table} (written by Fivetran)."
 
 

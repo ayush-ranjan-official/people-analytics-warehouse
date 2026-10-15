@@ -108,7 +108,7 @@ RESULTS = EVAL / "results"
 REVIEWS = RESULTS / "reviews.yaml"
 QUESTIONS = EVAL / "questions.yaml"
 PROMPT = EVAL / "prompt.md"
-# documented is a frozen copy of schema_context.md as Phase 4 wrote it, so Run B stays reproducible
+# documented is a frozen copy of schema_context.md as first written, so Run B stays reproducible
 # after the docs are fixed; `make docs` regenerates schema_context.md and schema_bare.md.
 CONTEXTS = {"bare": EVAL / "schema_bare.md",
             "documented": EVAL / "schema_context_original.md",

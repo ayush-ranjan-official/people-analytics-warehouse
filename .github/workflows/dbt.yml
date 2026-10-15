@@ -2,8 +2,8 @@
 # freshness, then simulate the next HR business day so the following run has changes to pick up.
 #
 # Repository secrets: BQ_SA_KEY_JSON (the dbt service-account key, whole JSON), GCP_PROJECT_ID,
-# POSTGRES_URL, LANDING_POSTGRES_URL. Repository variables: INGEST_SOURCE (required) is "direct" until
-# the Fivetran connection is live, then "fivetran"; PAUSE_SIMULATION set to "true" freezes the source
+# POSTGRES_URL, LANDING_POSTGRES_URL. Repository variables: INGEST_SOURCE (required) is "fivetran", or
+# "direct" for the bootstrap load straight from the source; PAUSE_SIMULATION set to "true" freezes the source
 # (no new business days), e.g. while preparing a demo.
 name: nightly
 
@@ -52,7 +52,7 @@ jobs:
       - name: Load landing data into BigQuery
         run: |
           if [ -z "$INGEST_SOURCE" ]; then
-            echo "::error::Set the repository variable INGEST_SOURCE (Settings > Secrets and variables > Actions > Variables): direct until the Fivetran connection is live, then fivetran."
+            echo "::error::Set the repository variable INGEST_SOURCE (Settings > Secrets and variables > Actions > Variables): fivetran, or direct for the bootstrap load from the source."
             exit 1
           fi
           make ingest SOURCE="$INGEST_SOURCE"

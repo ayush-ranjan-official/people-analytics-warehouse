@@ -105,6 +105,3 @@ and test built on it.
 `make simulate-day` kept working during drills 2 and 3. It writes to whatever the live column is
 called, and converts levels to the live column type, so the source kept moving while the drift was in
 place. After all three were reverted, the full build passed: 114 of 114.
-
-Still to do once the Fivetran connection is live: run the three drills through Fivetran, and record
-the time from the change to the first failing nightly run.

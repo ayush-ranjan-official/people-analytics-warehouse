@@ -19,9 +19,9 @@ TARGET   ?= dev
         dbt-build dbt-nightly freshness storage-report drill check-inventory migration-check validate-lookml eval docs
 
 help: ## List targets
-	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-16s %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-18s %s\n", $$1, $$2}'
 
-# ---------------------------------------------------------------- Phase 0
+# ---------------------------------------------------------------- Setup and checks
 setup: ## Create .venv (Python 3.12) and install pinned requirements
 	uv venv --python 3.12 --allow-existing .venv
 	uv pip install --python .venv/bin/python -r requirements.txt
@@ -41,10 +41,10 @@ check-dbt: check-env ## dbt debug against BigQuery
 check-postgres: check-env ## Insert and read back a row in Postgres
 	$(RUN) python scripts/check_postgres.py
 
-check: check-gcp check-dbt check-postgres ## Phase 0 done-check
-	@echo "Phase 0 done-check passed."
+check: check-gcp check-dbt check-postgres ## Connection checks: GCP key and datasets, dbt debug, Postgres write and read
+	@echo "All connection checks passed."
 
-# ---------------------------------------------------------------- Phase 1: source data
+# ---------------------------------------------------------------- Source data
 generate: ## Generate the synthetic HRIS + ATS history into generator/output
 	$(RUN) python -m generator.generate
 
@@ -61,10 +61,10 @@ backfill-source: check-env ## Fill a column added to the source after the first 
 fix-source: check-env ## Fix the planted data-quality issues in the source (APPLY=1 commits; default is a dry run)
 	$(RUN) python -m generator.fix_source $(if $(APPLY),--apply)
 
-check-data: check-env ## Phase 1 done-check: row counts, FTEs on the last day, planted issues
+check-data: check-env ## Check the source data: row counts, FTEs on the last day, planted issues
 	$(RUN) python -m generator.verify
 
-# ---------------------------------------------------------------- Phase 2: ingestion
+# ---------------------------------------------------------------- Ingestion
 setup-replication: check-env ## Grants + publication for Fivetran (SLOT=1 also creates the replication slot)
 	$(RUN) python -m ingestion.setup_replication $(if $(SLOT),--slot)
 
@@ -74,7 +74,7 @@ ingest: check-env ## Copy landing data into BigQuery raw_hris (ALL=1 reloads all
 check-ingestion: check-env ## Compare source -> landing -> BigQuery (SOURCE=direct for bootstrap loads)
 	$(RUN) python -m ingestion.check_ingestion $(if $(SOURCE),--source $(SOURCE))
 
-# ---------------------------------------------------------------- Phase 3: dbt
+# ---------------------------------------------------------------- dbt
 DBT := $(RUN) dbt
 
 # dbt packages are installed again only when packages.yml or the lock file changes.
@@ -96,24 +96,24 @@ freshness: check-env ## dbt source freshness (warn/error thresholds per table)
 storage-report: check-env ## Bytes written vs the BigQuery sandbox's 10 GiB lifetime allowance (RECORD=1 saves to the ledger)
 	$(RUN) python scripts/storage_report.py $(if $(RECORD),--record)
 
-# ---------------------------------------------------------------- Phase 6: drills
+# ---------------------------------------------------------------- Drills
 DRILLS := drift_add_column drift_rename_column drift_type_change fail_credentials fail_permissions
 drill: check-env ## Break the source on purpose: NAME=<drill>, REVERT=1 undoes it (docs/runbook-*.md)
 	@test -n "$(NAME)" && test -n "$(filter $(NAME),$(DRILLS))" || { echo "NAME must be one of: $(DRILLS)"; exit 1; }
 	$(RUN) python -m simulations.$(NAME) $(if $(REVERT),--revert)
 
-# ---------------------------------------------------------------- Phase 7: migration
+# ---------------------------------------------------------------- Visier migration
 check-inventory: ## Offline: inventory rows point at real models and LookML fields; every mart and measure covered
 	$(RUN) python scripts/check_migration_inventory.py
 
 migration-check: check-env check-inventory ## The inventory check, then the Visier reconciliation
 	$(RUN) python scripts/reconcile.py
 
-# ---------------------------------------------------------------- Phase 5: semantic layer
+# ---------------------------------------------------------------- Semantic layer
 validate-lookml: ## Offline LookML checks: parse, field references, mart columns, joins, fanout, dashboards (STRICT=1 fails on warnings)
 	$(RUN) python scripts/validate_lookml.py $(if $(STRICT),--strict)
 
-# ---------------------------------------------------------------- Phase 8: text-to-SQL eval
+# ---------------------------------------------------------------- Text-to-SQL eval
 # EVAL names the run because RUN is the command prefix above (RUN=bare on the command line would replace it).
 EVAL_MODE = $(if $(CANARY),--canary,$(if $(RESCORE),--rescore $(RESCORE),--run $(EVAL) $(if $(ONLY),--only $(ONLY))))
 eval: check-env ## Text-to-SQL eval: EVAL=bare|documented|improved [ONLY=q01,q02] [QUESTIONS=file] [CONTEXT=file]; CANARY=1; RESCORE=file.jsonl

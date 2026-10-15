@@ -18,8 +18,9 @@ Anything the public docs don't settle is a question for the client (section 8).
   hierarchy ([definitions](https://www.visier.com/docs/definitions/successfactors)).
 - **Metrics:** Headcount, Average Headcount, the turnover family, tenure, time to fill, time to hire,
   offer acceptance, applicant conversion. **Security:** who sees which population and properties.
-- **Consumers:** guidebooks and analyses become LookML explores and dashboards (Data Studio on the
-  `rpt_*` views today); scheduled exports and data-out connectors are replaced or retired.
+- **Consumers:** guidebooks and analyses become LookML explores and dashboards (Data Studio over the
+  `rpt_*` reporting views, specified in [dashboards.md](dashboards.md)); scheduled exports and data-out
+  connectors are replaced or retired.
 
 **Out of scope**, retired unless the client names an owner for a replacement (question 14):
 [Benchmarks](https://docs.visier.com/visier-people/Visier%20People%20Metrics/benchmarks/benchmarks%20visier.htm),
@@ -198,7 +199,8 @@ tenant once a Visier export shows which rule it applies (question 3).
 | **Back to the source systems through Fivetran** (this repo) | HRIS and ATS tables replicated with change data capture, landed, batch-loaded to BigQuery; dbt rebuilds history from effective dates ([D2](decisions.md), [D6](decisions.md)) | The source must hold the history, or the warehouse must have been recording it (`snap_employees`) | The go-forward pipeline |
 
 **Recommendation.** The go-forward pipeline is source systems → Fivetran → BigQuery → dbt, which is how
-this repo is designed (until its Fivetran connection is live, a bootstrap load copies the same tables).
+this repo is designed (here with a Postgres landing database in between, because Fivetran can't write
+to a BigQuery sandbox).
 Visier is being switched off, and what it holds is a processed copy that includes system events, exits
 inferred from missing records ([data loads](https://docs.visier.com/developer/Studio/data/data-loads.htm))
 and rules applied inside Visier, so nothing ongoing should depend on it. No Fivetran source connector

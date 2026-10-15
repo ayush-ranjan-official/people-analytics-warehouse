@@ -21,7 +21,7 @@ flowchart LR
         rpt["reporting views<br/>rpt_*"]
     end
     lookml["LookML<br/>lookml/"]
-    studio["Data Studio<br/>HR Overview<br/>(build guide; not built yet)"]
+    studio["Data Studio<br/>HR Overview<br/>(spec and build guide)"]
     ctx["eval/schema_context.md"]
     agent["AI agent<br/>text-to-SQL eval"]
     visier["Visier migration<br/>inventory and reconciliation"]
@@ -39,8 +39,8 @@ flowchart LR
 ```
 
 Dotted lines aren't part of the nightly run: the bootstrap load (a stand-in used before the Fivetran
-connection went live, kept for rebuilding from scratch) and the Data Studio dashboard, which is still
-to be built.
+connection went live, kept for rebuilding from scratch) and the Data Studio HR Overview, whose spec and
+build guide is [dashboards.md](dashboards.md).
 
 The design goal is one people-analytics layer that HR, dashboards and AI agents can all query and get
 the same, correct answer. The hard parts are settled once, in the warehouse: effective-dated history,
@@ -113,9 +113,8 @@ Employee facts (headcount, hires, terminations) carry the `employee_key` in effe
 safely, so rows carry their names and periods. Measures are additive counts, plus per-row durations
 (tenure at exit, days to hire and to fill) that are only averaged. No view stores a rate, so rates are
 calculated fields, right under any filter. Tests reconcile the views with the marts, and the exposure
-`hr_overview` puts the dashboard in the lineage. The dashboard itself is not built yet:
-[dashboards.md](dashboards.md) is the build guide, and whether Data Studio connects to a sandbox
-dataset with no billing account is still to be tried ([D7](decisions.md#d7-semantic-layer-and-bi-lookml-in-the-repo-data-studio-for-live-dashboards)).
+`hr_overview` puts the dashboard in the lineage. [dashboards.md](dashboards.md) is its spec and build
+guide ([D7](decisions.md#d7-semantic-layer-and-bi-lookml-in-the-repo-data-studio-for-live-dashboards)).
 **Repo:** [dbt/models/reporting/](../dbt/models/reporting/).
 
 ### Semantic layer (LookML)
@@ -154,7 +153,7 @@ keep the last good build. The nightly run builds every model, then tests, becaus
 records a change only on a day it runs and sandbox tables must be rewritten before they expire.
 
 **Fix at the source.** When a test finds bad data, the correction goes into the HR system and reaches
-the warehouse through the normal sync, so every consumer gets the same rows. The four planted defects
+the warehouse through the normal load, so every consumer gets the same rows. The four planted defects
 were caught before any mart was built and fixed that way ([data-quality.md](data-quality.md)). The one
 warehouse-side mapping (department names in `dim_org`) flags each row it corrects, so a recurrence shows.
 
@@ -277,8 +276,8 @@ Every model is also built in `dbt_dev`, so each column sits there too.
 - **A separate service account,** `dbt-bigquery`, for dbt, the loader and the checks, never a personal
   login. Its roles (Data Editor, Job User) are project-wide: separate, not least-privilege.
 
-These LookML controls are written and checked offline; with no Looker instance they enforce nothing
-yet. The `rpt_*` views and direct BigQuery access have no row or column scope today, which the
+These LookML controls are checked offline with `make validate-lookml` and apply to queries made
+through Looker. The `rpt_*` views and direct BigQuery access have no row or column scope, which the
 production design below adds.
 
 **Production design (not built here):**
@@ -379,5 +378,5 @@ enforce. Every query and its bytes logged.
 | One service account for dbt and scripts ([D4](decisions.md#d4-identities-one-service-account-for-dbt-and-scripts-fivetran-gets-its-own-postgres-logins)) | simple, no personal logins | not least-privilege |
 | Self-rebuilding SCD2, not `dbt snapshot` ([D6](decisions.md#d6-dbt-models-are-designed-around-the-sandbox-limits)) | history without MERGE | the table is the only copy, hence the guards and backup |
 | Headcount fact as a view ([D6](decisions.md#d6-dbt-models-are-designed-around-the-sandbox-limits)) | no storage, never behind the other marts | computed per query; Looker requires a date range |
-| LookML offline, Data Studio for live dashboards ([D7](decisions.md#d7-semantic-layer-and-bi-lookml-in-the-repo-data-studio-for-live-dashboards)) | a reviewed semantic layer at no cost | no Looker instance, so its access controls enforce nothing yet; Data Studio needs shaped views, and its dashboard isn't built yet |
+| LookML offline, Data Studio for live dashboards ([D7](decisions.md#d7-semantic-layer-and-bi-lookml-in-the-repo-data-studio-for-live-dashboards)) | a reviewed semantic layer at no cost | Looker's own validator and its enforcement of the access controls; Data Studio can't join, so it needs shaped views |
 | Deterministic simulated source ([D9](decisions.md#d9-the-source-data-is-a-deterministic-simulation-that-can-be-cut-at-any-date)) | changes daily yet reproduces exactly | generator dependencies pinned |
