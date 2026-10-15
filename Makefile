@@ -76,12 +76,16 @@ check-ingestion: check-env ## Compare source -> landing -> BigQuery (SOURCE=dire
 
 # ---------------------------------------------------------------- Phase 3: dbt
 DBT := $(RUN) dbt
-dbt-build: check-env ## dbt deps + build (seeds, models, tests); TARGET=prod for production
+
+# dbt packages are installed again only when packages.yml or the lock file changes.
+dbt/dbt_packages: dbt/packages.yml dbt/package-lock.yml
 	$(DBT) deps $(DBT_DIRS) --quiet
+	@touch $@
+
+dbt-build: check-env dbt/dbt_packages ## dbt build: seeds, models, tests; TARGET=prod for production
 	$(DBT) build $(DBT_DIRS) --target $(TARGET)
 
-dbt-nightly: check-env ## Scheduled refresh: run every model (a failing test can't stop a rebuild), then test
-	$(DBT) deps $(DBT_DIRS) --quiet
+dbt-nightly: check-env dbt/dbt_packages ## Scheduled refresh: run every model (a failing test can't stop a rebuild), then test
 	$(DBT) seed $(DBT_DIRS) --target $(TARGET)
 	$(DBT) run $(DBT_DIRS) --target $(TARGET)
 	$(DBT) test $(DBT_DIRS) --target $(TARGET)
@@ -107,5 +111,8 @@ validate-lookml: ## (Phase 5) Parse and cross-check LookML files
 eval: ## (Phase 8) Run the text-to-SQL evaluation
 	@echo "Not implemented yet: Phase 8"; exit 1
 
-docs: ## (Phase 4) Generate dbt docs and eval/schema_context.md
-	@echo "Not implemented yet: Phase 4"; exit 1
+docs: check-env dbt/dbt_packages ## dbt docs for the analytics dataset, the agent's schema context (eval/), and a 100% coverage check
+	$(DBT) docs generate $(DBT_DIRS) --target prod --static
+	$(RUN) python scripts/build_schema_context.py
+	$(RUN) python scripts/build_schema_context.py --bare
+	$(RUN) python scripts/check_doc_coverage.py

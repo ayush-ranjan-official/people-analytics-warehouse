@@ -17,7 +17,8 @@ see [docs/decisions.md](docs/decisions.md).
       (loader and checks done; the Fivetran connection isn't live yet, so BigQuery is loaded with
       `make ingest SOURCE=direct` in the meantime)
 - [x] **Phase 3:** dbt staging, SCD2 employee history, star schema marts, tests, nightly build
-- [ ] **Phase 4:** model and column docs, metric definitions, schema context for LLMs
+- [x] **Phase 4:** model and column docs ([metric definitions](docs/metric-definitions.md)), and the
+      schema context an AI agent gets ([eval/schema_context.md](eval/schema_context.md))
 - [ ] **Phase 5:** LookML semantic layer and Data Studio dashboards
 - [ ] **Phase 6:** schema-drift and sync-failure drills, with runbooks
       (all five drills built and run against the source; the sync-failure drills still need the
@@ -42,6 +43,7 @@ make simulate-day      # one more business day of hires, moves and exits
 make ingest SOURCE=direct   # load BigQuery raw_hris (SOURCE=direct until Fivetran is live)
 make dbt-build              # dbt seeds, models and tests (TARGET=prod for the analytics dataset)
 make storage-report         # bytes written so far vs the sandbox's 10 GiB lifetime allowance
+make docs                   # dbt docs, the agent's schema context, and a 100% documentation check
 ```
 
 Run `make help` for all targets.

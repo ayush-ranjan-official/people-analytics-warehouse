@@ -1,0 +1,12 @@
+version: 2
+
+models:
+  - name: int_reporting_date
+    description: |
+      Grain: one row. The HR system's "today": the latest business date the source data covers.
+      Daily facts run up to this date, never past it. It's behind the calendar date, because the
+      source is a simulation that moves one business day per night.
+    columns:
+      - name: reporting_date
+        description: The latest date the data covers. End every period at this date at the latest.
+        data_tests: [not_null]

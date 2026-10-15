@@ -1,167 +1,487 @@
 version: 2
 
+# Every mart states its grain, key, what it's for, how to join it, what it leaves out and the trap most
+# likely to give a wrong answer. These descriptions are also what an AI agent is given about the schema
+# (scripts/build_schema_context.py), so they're written for someone with no other context.
+
 models:
   - name: dim_date
-    description: Calendar days 2023-01-01 to 2027-12-31.
+    description: |
+      - Grain: one row per calendar day, 2023-01-01 to 2027-12-31.
+      - Primary key: date_day.
+      - Use for: grouping by month, quarter or fiscal period; finding month and quarter ends.
+      - Join: any date column to date_day; fct_headcount_daily.snapshot_month to month_key.
+      - Gotcha: the fiscal year runs April to March and is named after the year it ends
+        (FY2027 = 2026-04-01 to 2027-03-31).
     columns:
       - name: date_day
+        description: The calendar day.
         data_tests: [unique, not_null]
+      - name: month_start
+        description: First day of the month.
+      - name: month_end
+        description: Last day of the month.
+      - name: month_key
+        description: Year and month as an integer, yyyymm (e.g. 202609).
+      - name: calendar_year
+        description: Calendar year, e.g. 2026.
+      - name: calendar_quarter
+        description: Calendar quarter, 1 to 4 (Q1 = January to March).
+      - name: year_quarter
+        description: Calendar year and quarter as text, e.g. '2026-Q3'.
+      - name: month_name
+        description: Month name in English, e.g. 'September'.
+      - name: day_name
+        description: Day of the week in English, e.g. 'Monday'.
+      - name: is_weekend
+        description: True on Saturdays and Sundays.
+      - name: is_month_end
+        description: True on the last day of a month.
+      - name: is_quarter_end
+        description: True on the last day of a calendar quarter.
+      - name: fiscal_year
+        description: Fiscal year (April to March), named after the year it ends.
+      - name: fiscal_quarter
+        description: Fiscal quarter, 1 to 4 (Q1 = April to June).
 
   - name: dim_org
-    description: Departments with corrected names, parent department and cost centre.
+    description: |
+      - Grain: one row per department or team (11 rows).
+      - Primary key: department_id.
+      - Use for: naming and grouping departments; rolling teams up to their division.
+      - Join: department_id from dim_employee or any fact.
+      - Gotcha: Engineering is split into three teams (Platform, Data, Security) under a parent row named
+        'Engineering' that holds only the head of Engineering. For all of Engineering filter
+        division_name = 'Engineering'; department_name = 'Engineering' finds one person.
     columns:
       - name: department_id
+        description: HRIS department id, e.g. 'D01'.
         data_tests: [unique, not_null]
       - name: department_name
+        description: Department or team name, e.g. 'Sales' or 'Engineering - Data'. Teams are named '<Department> - <Team>'.
         data_tests:
           - not_null
           - accepted_values:
               arguments:
                 values: [Engineering, Engineering - Platform, Engineering - Data, Engineering - Security,
                          Product, Sales, Marketing, People, Finance, Legal, Operations]
+      - name: source_department_name
+        description: The name as stored in the HRIS, before any correction.
+      - name: name_corrected_in_warehouse
+        description: True if department_name was corrected by the warehouse's mapping seed. Should be false everywhere; true means the HRIS needs fixing.
+      - name: parent_department_id
+        description: The department a team belongs to. Null for a top-level department.
+      - name: parent_department_name
+        description: Name of the parent department. Null for a top-level department.
+      - name: division_name
+        description: The top-level department this row rolls up to (the parent's name for a team, its own name otherwise). Use it to group a whole function.
+      - name: cost_center
+        description: Finance cost centre code.
+      - name: is_team
+        description: True if no other department sits under it, i.e. people are assigned here. False only for a parent that groups teams (Engineering).
 
   - name: dim_employee
-    description: One row per employee per job-history version.
+    description: |
+      - Grain: one row per employee per job version (one row per HRIS job-history record).
+      - Primary key: employee_key.
+      - Use for: who someone was on a given date (department, manager, level, location, salary); the
+        dimension every fact joins to.
+      - Join: facts carry the employee_key of the version in effect on the event date. For any date d,
+        the version is the row where d between valid_from and valid_to.
+      - Excludes: nothing. All employment types are here; headcount metrics count employment_type = 'fte'.
+      - Gotcha: a person has several rows. For people employed today filter is_current. A rehired person
+        has two employee_ids linked by person_id, so count distinct person_id to count people.
+        salary_local is in the row's currency: never sum or average it across currencies.
     data_tests:
       - dbt_utils.expression_is_true:
           arguments:
             expression: "valid_from <= valid_to"
     columns:
       - name: employee_key
+        description: Surrogate key for this job version (INT64). Facts join on it.
         data_tests: [unique, not_null]
+      - name: job_history_id
+        description: The HRIS job-history record this version comes from.
       - name: employee_id
+        description: HRIS employee id, e.g. 'E10001'. A person who leaves and is rehired gets a new one.
         data_tests: [not_null]
-      - name: valid_from
-        data_tests: [not_null]
-      - name: valid_to
-        data_tests: [not_null]
+      - name: person_id
+        description: The same person across rehires (the employee_id of their first employment record, matched on email).
+      - name: first_name
+        description: First name (synthetic).
+      - name: last_name
+        description: Last name, as it is today (synthetic).
+      - name: email
+        description: Work email, lower case (synthetic).
       - name: employment_type
+        description: "'fte', 'contractor' or 'intern'. Headcount and attrition count fte only."
         data_tests:
           - accepted_values:
               arguments:
                 values: [fte, contractor, intern]
+      - name: hire_date
+        description: First day of this employment record.
+      - name: termination_date
+        description: Last day employed on this record. Null while still employed.
+      - name: valid_from
+        description: First day this version applies (inclusive).
+        data_tests: [not_null]
+      - name: valid_to
+        description: Last day this version applies (inclusive). 9999-12-31 for a version still in effect.
+        data_tests: [not_null]
+      - name: is_latest_version
+        description: True for the last version of each employment record, including people who have left.
+      - name: is_current
+        description: True for the version in effect today for people still employed (one row per active employee, all employment types).
+      - name: change_reason
+        description: "Why this version started: hire, rehire, promotion, transfer, manager_change, location_change, merit_increase or salary_adjustment."
+      - name: position_id
+        description: The seat held in this version.
       - name: department_id
+        description: Department or team in this version. Join to dim_org.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_org')
+                field: department_id
+      - name: manager_id
+        description: employee_id of the manager in this version. Null only for the CEO.
+      - name: location
+        description: "Work location: Bengaluru, London, New York, Remote or Singapore."
+        data_tests: [not_null]
+      - name: job_level
+        description: Job level, 'L1' (entry) to 'L7' (most senior).
+        data_tests: [not_null]
+      - name: job_level_number
+        description: The job level as a number, 1 to 7, for comparisons such as job_level_number >= 5.
+      - name: salary_local
+        description: Annual base salary in the version's currency.
+      - name: currency
+        description: "ISO currency of salary_local: INR, GBP, SGD or USD (follows the location)."
+
+  - name: fct_headcount_daily
+    description: |
+      - Grain: one row per employment record per day employed, from 2023-10-01 to the reporting date.
+      - Primary key: snapshot_date + employee_id.
+      - Use for: headcount on a date; average headcount over a period (the attrition denominator);
+        headcount by department, location or level over time.
+      - Join: employee_key to dim_employee (the version in effect that day); department_id to dim_org;
+        snapshot_date to dim_date.date_day; snapshot_month to dim_date.month_key.
+      - Excludes: days before 2023-10-01, when the history starts, and days after the reporting date.
+      - Gotcha: contractors and interns are included, so headcount is countif(is_fte). Average headcount
+        is FTE rows in the period divided by days in the period, not the headcount at the end. A leaver
+        still counts on their last day. The data stops at the HR system's "today"
+        (max(snapshot_date), also analytics.int_reporting_date), which is behind the calendar, so
+        snapshot_date = current_date() returns nothing. It's a view: always filter on snapshot_date.
+    data_tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [snapshot_date, employee_id]
+    columns:
+      - name: snapshot_date
+        description: The day being counted.
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_day
+      - name: snapshot_month
+        description: Month of snapshot_date as yyyymm (e.g. 202609). Joins to dim_date.month_key.
+      - name: employee_key
+        description: The employee's job version in effect that day. Join to dim_employee.
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_employee')
+                field: employee_key
+      - name: employee_id
+        description: HRIS employee id.
+      - name: person_id
+        description: The same person across rehires. Count distinct person_id to count people rather than records.
+      - name: department_id
+        description: Department or team that day. Join to dim_org.
         data_tests:
           - relationships:
               arguments:
                 to: ref('dim_org')
                 field: department_id
       - name: location
-        data_tests: [not_null]
+        description: Work location that day.
       - name: job_level
-        data_tests: [not_null]
-
-  - name: fct_headcount_daily
-    description: One row per employee per day employed.
-    data_tests:
-      - dbt_utils.unique_combination_of_columns:
-          arguments:
-            combination_of_columns: [snapshot_date, employee_id]
-    columns:
-      - name: employee_key
-        data_tests:
-          - not_null
-          - relationships:
-              arguments:
-                to: ref('dim_employee')
-                field: employee_key
-      - name: snapshot_date
-        data_tests:
-          - relationships:
-              arguments:
-                to: ref('dim_date')
-                field: date_day
-      - name: department_id
-        data_tests:
-          - relationships:
-              arguments:
-                to: ref('dim_org')
-                field: department_id
+        description: Job level that day, 'L1' to 'L7'.
+      - name: job_level_number
+        description: Job level that day as a number, 1 to 7.
+      - name: employment_type
+        description: "'fte', 'contractor' or 'intern'."
+      - name: is_fte
+        description: True for full-time employees. Headcount = countif(is_fte).
 
   - name: fct_hires
-    description: One row per FTE hire event.
+    description: |
+      - Grain: one row per FTE hire (an FTE employment record starting) since 2023-10-01.
+      - Primary key: hire_key.
+      - Use for: hires by period, department or source; rehire share; time to fill and time to hire
+        for people who started.
+      - Join: employee_key to dim_employee (their first version); req_id to fct_requisitions;
+        application_id to fct_application_funnel.
+      - Excludes: contractors, interns, and people hired before 2023-10-01.
+      - Gotcha: hire_date is the first day at work. The offer was accepted earlier (offer_accepted_date),
+        which is when the recruiting tables count a hire. A rehire counts as a hire (is_rehire).
     columns:
       - name: hire_key
+        description: Surrogate key for the hire (INT64).
         data_tests: [unique, not_null]
+      - name: employee_id
+        description: HRIS employee id of the new employment record.
       - name: employee_key
+        description: The hire's first job version. Join to dim_employee.
         data_tests:
           - not_null
           - relationships:
               arguments:
                 to: ref('dim_employee')
                 field: employee_key
+      - name: person_id
+        description: The same person across rehires.
+      - name: hire_date
+        description: First day at work.
+      - name: is_rehire
+        description: True if the person had worked here before (a new employee_id, the same person_id).
+      - name: department_id
+        description: Department or team they joined. Join to dim_org.
+      - name: location
+        description: Work location they joined in.
+      - name: job_level
+        description: Level they joined at, 'L1' to 'L7'.
+      - name: job_level_number
+        description: Level they joined at, as a number 1 to 7.
+      - name: position_id
+        description: The seat they filled.
       - name: req_id
+        description: The requisition they were hired through.
         data_tests:
           - not_null
           - relationships:
               arguments:
                 to: ref('fct_requisitions')
                 field: req_id
+      - name: application_id
+        description: Their application. Join to fct_application_funnel.
+      - name: application_source
+        description: "Where the candidate came from: Agency, Careers Site, Job Board, LinkedIn or Referral."
+      - name: req_opened_date
+        description: Day the requisition was opened.
+      - name: offer_accepted_date
+        description: Day the offer was accepted (the requisition's closed_date).
+      - name: days_to_fill
+        description: Days from the requisition opening to the offer being accepted.
+      - name: days_to_hire
+        description: Days from the candidate applying to the offer being accepted.
+      - name: days_offer_to_start
+        description: Days from the offer being accepted to the first day at work.
 
   - name: fct_terminations
-    description: One row per FTE exit event.
+    description: |
+      - Grain: one row per FTE exit event.
+      - Primary key: termination_key.
+      - Use for: attrition, exits by type or reason, regretted exits, tenure at exit.
+      - Join: employee_key to dim_employee (the version in effect on the exit date); department_id to
+        dim_org.
+      - Excludes: contractors and interns (a contract or internship ending isn't attrition).
+      - Gotcha: a rehired person can leave twice under two employee_ids. Attrition counts exit events;
+        to count people, count distinct person_id. termination_date is the last day employed, so the
+        person leaves headcount the next day.
     data_tests:
       - dbt_utils.expression_is_true:
           arguments:
             expression: "(termination_type = 'voluntary') = (regretted_flag is not null)"
     columns:
       - name: termination_key
+        description: Surrogate key for the exit (INT64).
         data_tests: [unique, not_null]
+      - name: termination_id
+        description: HRIS exit record id.
+      - name: employee_id
+        description: HRIS employee id of the employment record that ended.
       - name: employee_key
+        description: The job version in effect on the exit date. Join to dim_employee.
         data_tests:
           - not_null
           - relationships:
               arguments:
                 to: ref('dim_employee')
                 field: employee_key
+      - name: person_id
+        description: The same person across rehires.
+      - name: termination_date
+        description: Last day employed.
       - name: termination_type
+        description: "'voluntary' (the person chose to leave), 'involuntary' (the company ended it) or 'retirement'."
         data_tests:
           - accepted_values:
               arguments:
                 values: [voluntary, involuntary, retirement]
+      - name: termination_type_code
+        description: The HRIS code for termination_type, V, I or R.
+      - name: reason_code
+        description: HRIS reason code, e.g. 'VOL_COMPENSATION'.
+      - name: reason
+        description: The reason in plain English, e.g. 'Compensation'.
+      - name: regretted_flag
+        description: True if the manager marked the leaver as someone they wanted to keep. Set only for voluntary exits; null for involuntary exits and retirements.
+      - name: hire_date
+        description: First day of the employment record that ended.
+      - name: tenure_days_at_exit
+        description: Days from hire_date to termination_date. Divide by 365.25 for years.
+      - name: department_id
+        description: Department or team on the exit date. Join to dim_org.
+      - name: location
+        description: Work location on the exit date.
+      - name: job_level
+        description: Level on the exit date, 'L1' to 'L7'.
+      - name: job_level_number
+        description: Level on the exit date, as a number 1 to 7.
+      - name: manager_id
+        description: employee_id of their manager on the exit date.
 
   - name: fct_requisitions
-    description: One row per requisition.
+    description: |
+      - Grain: one row per requisition (an approved opening for one seat).
+      - Primary key: req_id.
+      - Use for: open, filled and cancelled requisitions; time to fill; applicants per requisition;
+        replacement hiring versus new seats.
+      - Join: req_id to fct_application_funnel and fct_hires; department_id to dim_org;
+        hired_employee_id to dim_employee.employee_id.
+      - Excludes: nothing. Contractor and intern openings are included; filter employment_type = 'fte'
+        to match fct_hires.
+      - Gotcha: a filled requisition's closed_date is when the offer was accepted, not the start date.
     columns:
       - name: req_id
+        description: ATS requisition id.
         data_tests: [unique, not_null]
-      - name: requisition_status
-        data_tests:
-          - accepted_values:
-              arguments:
-                values: [open, filled, cancelled]
-      - name: employment_type
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: [fte, contractor, intern]
+      - name: position_id
+        description: The seat being hired for.
       - name: department_id
+        description: Hiring department or team. Join to dim_org.
         data_tests:
           - relationships:
               arguments:
                 to: ref('dim_org')
                 field: department_id
+      - name: hiring_manager_id
+        description: employee_id of the hiring manager.
+      - name: job_level
+        description: Level being hired for, 'L1' to 'L7'. For a filled requisition, the hire's starting level; otherwise the seat's current grade.
+      - name: job_level_number
+        description: The same level as a number, 1 to 7.
+      - name: opened_date
+        description: Day the requisition was opened.
+      - name: closed_date
+        description: Day it was filled (offer accepted) or cancelled. Null while open.
+      - name: requisition_status
+        description: "'open', 'filled' or 'cancelled'."
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [open, filled, cancelled]
+      - name: employment_type
+        description: "What the opening is for: 'fte', 'contractor' or 'intern'."
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [fte, contractor, intern]
+      - name: is_backfill
+        description: True if the seat existed before the requisition opened (replacing someone who left or moved); false for a new seat.
+      - name: days_to_fill
+        description: Days from opening to the offer being accepted. Null unless filled.
+      - name: applicant_count
+        description: Number of applications received (duplicates removed).
+      - name: hired_employee_id
+        description: employee_id of the person hired. Null until they start, even if the offer was accepted.
 
   - name: fct_application_funnel
-    description: One row per application, with stage timestamps.
+    description: |
+      - Grain: one row per application (one candidate applying to one requisition).
+      - Primary key: application_id.
+      - Use for: funnel conversion by stage, source effectiveness, offer acceptance, time spent in each
+        stage.
+      - Join: req_id to fct_requisitions; department_id to dim_org; hired_employee_id to
+        dim_employee.employee_id.
+      - Excludes: double submissions (only the first application per candidate and requisition is kept).
+      - Gotcha: hired_at and reached_hired mean the offer was accepted, not that the person has started
+        (fct_hires.hire_date is the start). Contractor and intern openings are included; filter
+        employment_type = 'fte' to match fct_hires. For conversion rates use applications old enough to
+        have finished, because recent ones are still in progress.
     columns:
       - name: application_id
+        description: ATS application id.
         data_tests: [unique, not_null]
       - name: req_id
+        description: The requisition applied to.
         data_tests:
           - relationships:
               arguments:
                 to: ref('fct_requisitions')
                 field: req_id
+      - name: candidate_id
+        description: ATS candidate id. The same candidate can apply to several requisitions.
+      - name: department_id
+        description: Hiring department or team. Join to dim_org.
+      - name: source
+        description: "Where the candidate came from: Agency, Careers Site, Job Board, LinkedIn or Referral."
+      - name: applied_date
+        description: Day the application was submitted.
       - name: current_stage
+        description: Latest stage reached. In progress, 'applied', 'screen', 'interview' or 'offer'; finished, 'hired', 'rejected', 'withdrawn' or 'offer_declined'.
         data_tests:
           - accepted_values:
               arguments:
                 values: [applied, screen, interview, offer, hired, rejected, withdrawn, offer_declined]
+      - name: is_closed
+        description: True once the application has finished (hired, rejected, withdrawn or offer declined).
+      - name: employment_type
+        description: "What the requisition is for: 'fte', 'contractor' or 'intern'."
+      - name: hired_employee_id
+        description: employee_id of the hire, once they have started. Null otherwise.
+      - name: applied_at
+        description: When the application was submitted (UTC).
+      - name: screened_at
+        description: When it reached the screen stage. Null if it never did.
+      - name: interviewed_at
+        description: When it reached the interview stage. Null if it never did.
+      - name: offered_at
+        description: When an offer was made. Null if none was.
+      - name: hired_at
+        description: When the offer was accepted (not the start date). Null if it wasn't.
+      - name: closed_out_at
+        description: When it was rejected, withdrawn or the offer declined. Null if hired or still open.
+      - name: reached_screen
+        description: True if it reached the screen stage.
+      - name: reached_interview
+        description: True if it reached the interview stage.
+      - name: reached_offer
+        description: True if an offer was made.
+      - name: reached_hired
+        description: True if the offer was accepted.
+      - name: days_applied_to_screen
+        description: Days from applying to the screen. Null if not screened.
+      - name: days_screen_to_interview
+        description: Days from the screen to the interview. Null if not interviewed.
+      - name: days_interview_to_offer
+        description: Days from the interview to the offer. Null if no offer.
+      - name: days_offer_to_hire
+        description: Days from the offer to its acceptance. Null if not accepted.
 
   - name: snap_employees
-    description: SCD Type 2 history of employee records (self-rebuilding; the sandbox blocks dbt snapshots).
+    description: |
+      - Grain: one row per version of an employee's HRIS record (SCD Type 2, system time).
+      - Primary key: employee_id + valid_from.
+      - Use for: auditing what the HRIS said about a person and when it changed (name, email, status).
+        For job history on business dates use dim_employee instead.
+      - Gotcha: valid_from and valid_to are when the warehouse saw the record change, not when the change
+        took effect in the business.
     data_tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:
@@ -171,3 +491,26 @@ models:
             expression: "valid_from < valid_to"
           config:
             where: "valid_to is not null"
+    columns:
+      - name: employee_id
+        description: HRIS employee id.
+      - name: first_name
+        description: First name in this version.
+      - name: last_name
+        description: Last name in this version.
+      - name: email
+        description: Work email in this version.
+      - name: hire_date
+        description: Hire date in this version.
+      - name: termination_date
+        description: Termination date in this version. Null while employed.
+      - name: employee_status
+        description: "'active' or 'terminated'."
+      - name: employment_type
+        description: "'fte', 'contractor' or 'intern'."
+      - name: valid_from
+        description: When this version was first seen (UTC).
+      - name: valid_to
+        description: When it was replaced, or when the record was deleted at the source. Null for the current version.
+      - name: is_current
+        description: True for the version in effect now. A record deleted at the source has none.
