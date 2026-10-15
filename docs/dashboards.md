@@ -392,7 +392,7 @@ a measure whose SQL or filters use a field that the join leaves out.
 ### Access: rows and salary
 
 - **Row-level filter.** Every explore has an `access_filter` on `dim_org.division_name`, driven by the
-  user attribute `department`, which holds a division name. A department head sees only their own
+  user attribute `division`, which holds a division name. A division head sees only their own
   division, in every explore and on every tile. HR and admins get a value that matches every
   division.
 - **Salary grant.** `dim_employee.salary_local` and `currency` are hidden and need the

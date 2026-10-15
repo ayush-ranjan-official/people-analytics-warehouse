@@ -26,8 +26,8 @@ access_grant: can_see_salary {
   allowed_values: ["yes"]
 }
 
-# Every explore carries the same row-level filter: the "department" user attribute holds a division
-# name, so a department head only sees their own division. HR and admins get a value that matches
+# Every explore carries the same row-level filter: the "division" user attribute holds a division
+# name, so a division head only sees their own division. HR and admins get a value that matches
 # every division.
 
 explore: headcount {
@@ -46,7 +46,7 @@ explore: headcount {
 
   access_filter: {
     field: dim_org.division_name
-    user_attribute: department
+    user_attribute: division
   }
 
   join: dim_employee {
@@ -99,7 +99,7 @@ explore: attrition {
 
   access_filter: {
     field: dim_org.division_name
-    user_attribute: department
+    user_attribute: division
   }
 
   join: dim_employee {
@@ -136,7 +136,7 @@ explore: recruiting {
 
   access_filter: {
     field: dim_org.division_name
-    user_attribute: department
+    user_attribute: division
   }
 
   # Many applications per requisition, so requisition measures are fanned out here. Looker's

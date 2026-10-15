@@ -215,7 +215,7 @@ for Visier turned up in research; that doesn't matter for this design. Visier ex
 ## 6. Security mapping
 
 A Visier permission bundles data security, capabilities and content packages ([security model](https://docs.visier.com/visier-people/Studio/permissions/security%20model.htm)).
-The repo has one `access_filter` on `dim_org.division_name` (user attribute `department`) on each of
+The repo has one `access_filter` on `dim_org.division_name` (user attribute `division`) on each of
 its three explores, and the `can_see_salary` grant on `salary_local` and `currency` ([model](../lookml/people_analytics.model.lkml)).
 
 | Visier | BigQuery | LookML | Gap |
