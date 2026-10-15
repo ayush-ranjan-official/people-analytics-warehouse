@@ -8,9 +8,9 @@ drill scripts in [simulations/](../simulations/).
 
 | Signal | Credentials broken | One table stopped |
 | --- | --- | --- |
-| Fivetran connection status | sync fails: `password authentication failed for user "fivetran"` | no error: Fivetran doesn't know it's missing changes |
+| Fivetran connection status | sync fails within seconds, 0 tables extracted (the connection can't log in) | no error: Fivetran doesn't know it's missing changes |
 | Fivetran email | after the **second** failed sync in a row (connection errors) | none |
-| `make check-ingestion` | every table that changed is ahead in the source, behind in landing | only `ats_applications` differs between source and landing |
+| `make check-ingestion` | every table that changed is ahead in the source, behind in landing | only `ats_applications` differs, and its last sync is older than the other tables': the output points at the publication |
 | `make freshness` (nightly, never blocks) | `ats.applications` warns at 28 h and errors at 34 h; `hris.job_history` at 10 and 14 days | the same thresholds, but only `ats.applications` is flagged |
 | dbt tests | pass: the warehouse is consistent, just old | pass |
 
@@ -54,9 +54,12 @@ as of the last sync, so the right response is a warning rather than a red build.
 **Credentials.** Put the current password into the Fivetran connection settings, run Save & Test,
 then Sync now. Fivetran resumes from the replication slot, so nothing is lost if the slot survived.
 
-**One table stopped.** Run `make setup-replication`, which re-adds any missing table to the publication.
-Then **re-sync that table** in Fivetran. Changes made while it was out of the publication were never
-sent, so resuming alone leaves a gap.
+**One table stopped.** Run `make setup-replication`, which re-adds any missing table to the publication,
+then sync. Changes made while the table was out of the publication were never sent through the slot,
+so they can't simply be resumed. In the drill, Fivetran's next ordinary sync re-copied the whole table
+by itself (every row got the new sync time), which brought back the missed inserts and updates. Don't
+rely on that: confirm with `make check-ingestion`, and if the table is still behind, **re-sync that
+table** in Fivetran.
 
 **If the slot is gone.** Neon drops a slot after about 40 hours without progress. Recreate it with
 `make setup-replication SLOT=1` and run a full re-sync in Fivetran.
@@ -75,15 +78,38 @@ sent, so resuming alone leaves a gap.
 
 ## Drill log
 
-Run on 2026-10-14 against the source. The Fivetran connection isn't live yet, so these runs check the
-break and the revert. They don't check the alerting.
+Run on 2026-10-15 with the live Fivetran connection (logical replication, 6-hour schedule), syncs
+started by hand so each step could be timed. Times are UTC.
 
-| Drill | Break | Check during the drill | Revert | Check after |
-| --- | --- | --- | --- | --- |
-| 4. credentials | `fivetran` password changed to a random temporary one | login with the configured password **fails**; temporary file is 0600 | password restored | login **works**; temporary file removed |
-| 5. one table | `ats_applications` dropped from `fivetran_pub` | publication has **7** tables, `ats_applications` missing | table re-added | publication has **8** tables |
+**Drill 4: the password changed** (`make drill NAME=fail_credentials`)
 
-The bootstrap load reads the source directly, so these two failures don't reach BigQuery and freshness
-can't see them. `_fivetran_synced` is simply the load time. Once Fivetran is live, the plan is: run
-each drill for a full day, record the time of the first Fivetran email and the first freshness warning,
-then add screenshots of the failed sync and of the freshness output here.
+| Time | What happened |
+| --- | --- |
+| 06:20:25 | `fivetran` role's password changed; one business day simulated at the source |
+| 06:21:58 | Fivetran sync **failed** after 16 s, 0 tables extracted |
+| 06:23:08 | `make check-ingestion` exits 1: 4 tables behind (positions 1, requisitions 1, applications 31, stages 86 rows) |
+| 06:23:29 | password restored (`make drill NAME=fail_credentials REVERT=1`) |
+| 06:24 | next sync succeeded: 4 tables, 175 rows (the missed inserts and updates), resumed from the slot, no re-sync |
+| 06:26:24 | `make ingest`; all hops agree |
+
+Six minutes from break to recovered. On the 6-hour schedule the failure would surface at the next
+scheduled sync instead.
+
+**Drill 5: one table out of replication** (`make drill NAME=fail_permissions`)
+
+| Time | What happened |
+| --- | --- |
+| 06:26:37 | `ats_applications` removed from `fivetran_pub`; one business day simulated (33 new and 42 updated applications, plus job history and stage changes) |
+| 06:27:28 | Fivetran sync **successful**: 3 tables, 82 rows. `ats_applications` isn't in it, and nothing warns |
+| 06:29:05 | `make check-ingestion` exits 1: only `ats_applications` is behind (41,228 at the source, 41,195 landed) |
+| 06:29:27 | table re-added to the publication |
+| 06:30 | next ordinary sync re-copied the whole table: all 41,228 rows carry the 06:30 sync time; a row-by-row compare with the source finds no differences |
+| 06:32:02 | `make ingest`; all hops agree |
+
+This is the failure that matters most: Fivetran reported success throughout, and only the warehouse's
+own check found the gap.
+
+**Not covered by these runs.** Fivetran's failure emails weren't set up (in production they'd go to the
+team's alert channel after the second failed sync). Freshness warnings need the data to be 28 hours
+old, so a drill would have to stay broken for over a day; the thresholds are set in
+[_sources.yml](../dbt/models/staging/_sources.yml).

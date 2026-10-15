@@ -10,7 +10,9 @@ For each source table:
 - the BigQuery table isn't close to its sandbox expiry.
 
 Right after `make simulate-day` the source is ahead of the landing database until Fivetran's next
-sync, and the landing database is ahead of BigQuery until `make ingest`; the output says which.
+sync, and the landing database is ahead of BigQuery until `make ingest`; the output says which. A
+table that stays behind while the others keep syncing is a different problem (Fivetran reports those
+syncs as successful): the output then points at the replication publication.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import psycopg
@@ -29,6 +31,7 @@ from psycopg import sql
 
 from generator.generate import COLUMNS
 from ingestion.load_to_bigquery import LANDING_SCHEMA, RELOAD_WITHIN_DAYS, SOURCE_SCHEMA, Origin, bigquery_client
+from ingestion.setup_replication import PUBLICATION
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FIVETRAN_COLUMNS = {"_fivetran_synced", "_fivetran_deleted"}
@@ -68,6 +71,8 @@ def main() -> int:
     client, dataset = bigquery_client()
     now = datetime.now(UTC)
     problems: list[str] = []
+    behind: dict[str, tuple[int, int, datetime | None]] = {}     # table -> source rows, landing live rows, last sync
+    synced_by_table: dict[str, datetime | None] = {}
 
     print(f"Mode: {origin.name}" + ("  (bootstrap: BigQuery loaded straight from the source)" if origin.direct else ""))
     print(f"{'table':<24} {'source':>8} {'landing':>8} {'deleted':>8} {'bigquery':>9}  last synced (UTC)   expires in")
@@ -96,8 +101,7 @@ def main() -> int:
                     synced = land.execute(sql.SQL("select max(_fivetran_synced) from {}.{}").format(
                         sql.Identifier(LANDING_SCHEMA), sql.Identifier(table))).fetchone()[0]
                     if n_src != n_land - n_deleted:
-                        problems.append(f"{table}: source has {n_src:,} rows, landing has {n_land - n_deleted:,} "
-                                        "live (wait for or trigger a Fivetran sync)")
+                        behind[table] = (n_src, n_land - n_deleted, synced)
                 expected = origin.state(land, table)
 
             if n_bq is None:
@@ -110,11 +114,22 @@ def main() -> int:
                 if days_left is not None and days_left < RELOAD_WITHIN_DAYS:
                     problems.append(f"{table}: BigQuery copy expires in {days_left} days (run make ingest)")
 
+            synced_by_table[table] = synced
             shown_synced = f"{synced.astimezone(UTC):%Y-%m-%d %H:%M}" if synced else "-"
             shown_days = f"{days_left} days" if days_left is not None else "-"
             print(f"{table:<24} {n_src:>8,} {shown(n_land):>8} {shown(n_deleted):>8} {shown(n_bq):>9}  "
                   f"{shown_synced:<16}   {shown_days}")
 
+    latest = max((s for s in synced_by_table.values() if s), default=None)
+    for table, (n_src, n_live, synced) in behind.items():
+        if synced and latest and latest - synced > timedelta(minutes=1):
+            problems.insert(0, f"{table}: source has {n_src:,} rows, landing has {n_live:,} live, and its last sync "
+                               f"({synced:%H:%M}) is older than other tables' ({latest:%H:%M} UTC): syncs are "
+                               f"skipping it. Check it's still in publication {PUBLICATION} (make setup-replication "
+                               "re-adds it), then sync; see docs/runbook-sync-failure.md")
+        else:
+            problems.insert(0, f"{table}: source has {n_src:,} rows, landing has {n_live:,} live "
+                               "(wait for or trigger a Fivetran sync)")
     if problems:
         print("\n" + "\n".join(f"  {p}" for p in problems))
         return 1

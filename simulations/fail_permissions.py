@@ -25,6 +25,7 @@ if __name__ == "__main__":
         watch=["Every table keeps syncing except ats_applications",
                "`make freshness` flags only ats.applications (warn at 28 h, error at 34 h)",
                "`make check-ingestion` shows source and landing row counts drifting apart for that table"],
-        recover=["Changes made while the table was out of the publication were never sent: in Fivetran, "
-                 "re-sync the ats_applications table",
+        recover=["Sync, then run `make check-ingestion`. Changes made while the table was out of the publication "
+                 "were never sent; in the drill Fivetran re-copied the whole table on its next sync, but if it's "
+                 "still behind, re-sync the ats_applications table in Fivetran",
                  "`make setup-replication` also re-adds a missing table to the publication"]))
