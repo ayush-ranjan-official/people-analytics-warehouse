@@ -13,7 +13,9 @@ The questions use these periods:
 - **This year:** 2026-01-01 to 2026-10-10, which is 283 days.
 - **Today:** the reporting date, 2026-10-10.
 
-Every number is for FTEs only. Rates are for the period and not annualised.
+Every number is for FTEs only. Rates are for the period and not annualised. Questions 1, 3 and 4 and the
+Q3 part of 8 are closed periods, so their answers don't change. The others depend on the reporting date:
+the live dashboard reads 2026-10-14, a few business days later than these answers.
 
 | # | Question | Data Studio tile | LookML explore | Answer |
 | --- | --- | --- | --- | --- |

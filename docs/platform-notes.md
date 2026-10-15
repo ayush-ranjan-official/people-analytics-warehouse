@@ -55,7 +55,7 @@ Spend-cap budgets don't cover BigQuery, and budget alerts never stop spend (**do
   instead (`ALTER PUBLICATION … DROP TABLE …`). **docs**
 - No Mumbai region. AWS Singapore (`aws-ap-southeast-1`) is the closest. **docs**
 
-## Fivetran (Free plan, no card)
+## Fivetran (Free plan after a 14-day trial, no card)
 
 - 500,000 monthly active rows, 5,000 model runs, syncs as often as every 15 minutes. No card needed.
   Going over 500k twice freezes the account; it doesn't bill. **docs**

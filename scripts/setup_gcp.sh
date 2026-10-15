@@ -11,7 +11,7 @@
 #   5. the three datasets: raw_hris (loaded by our batch loader), dbt_dev, analytics
 #
 # Run via `make setup-gcp`, which loads .env. Prerequisite (opens a browser, so you run it):
-#   CLOUDSDK_ACTIVE_CONFIG_NAME=people-analytics gcloud auth login <your personal account>
+#   CLOUDSDK_ACTIVE_CONFIG_NAME=people-analytics gcloud auth login <the project owner's account>
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

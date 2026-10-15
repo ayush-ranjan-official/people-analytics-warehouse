@@ -164,6 +164,7 @@ warehouse-side mapping (department names in `dim_org`) flags each row it correct
    for a bootstrap straight from the source.
 2. `make dbt-nightly TARGET=prod`: seeds, every model, every test; runs even if the load failed.
 3. `make freshness`: reported, never blocks. A stalled sync leaves the warehouse correct but old.
+   Skipped while `PAUSE_SIMULATION=true`, when no new rows are expected.
 4. `make simulate-day`: the next HR business day at the source (off when `PAUSE_SIMULATION=true`).
 5. `make storage-report RECORD=1`, then a run summary ([scripts/ci_summary.py](../scripts/ci_summary.py)).
 

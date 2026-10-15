@@ -33,8 +33,9 @@ The fixes are a reviewed SQL patch, [generator/fix_source.sql](../generator/fix_
    patch restored the true dates rather than plausible ones.
 4. **Orphan exit records:** removed. No employee matches them, so they can't be attributed to anyone.
 
-Because the fixes are ordinary updates and deletes in the source, they reach BigQuery like any other
-source change: through Fivetran a delete lands as `_fivetran_deleted = true`, which staging filters out.
+The fixes are ordinary updates and deletes in the source. These went in on 2026-10-14, before the
+Fivetran connection was live, so they reached BigQuery through the bootstrap load. Through Fivetran, a
+delete lands as `_fivetran_deleted = true`, which staging filters out.
 The generator was then switched to stop planting the issues (`planted_issues.enabled: false`), so
 regenerated data is clean too.
 

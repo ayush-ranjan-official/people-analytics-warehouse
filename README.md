@@ -5,13 +5,29 @@
 
 A people-analytics warehouse for HR data moving off a Visier-style tool and onto BigQuery. Nodewell Labs
 grows from 350 to about 600 full-time employees over three years of HRIS and ATS history (2023-10-01 to
-2026-09-30), and the nightly run moves the source forward one business day. The simulated HRIS and ATS
-in Postgres are replicated by Fivetran, batch-loaded into BigQuery and modelled with dbt into a
-documented star schema, so that people (through a LookML semantic layer and reporting views) and AI
+2026-09-30). The simulated HRIS and ATS in Postgres are replicated by Fivetran, batch-loaded into
+BigQuery and modelled with dbt into a documented star schema, so that people (through a LookML semantic layer and reporting views) and AI
 agents (through documentation they read before writing SQL) get the same, correct answer. A migration
 rehearsal reconciles the warehouse's metrics against the source and against Visier's published
-definitions. It all runs at no cost and with no payment card: the BigQuery sandbox, Fivetran, Neon's
-free plan and GitHub Actions ([decisions](docs/decisions.md)).
+definitions. The pipeline runs at no cost and with no payment card: the BigQuery sandbox, Fivetran's
+Free plan, Neon's free plan and GitHub Actions ([decisions](docs/decisions.md)). The text-to-SQL eval
+runs on an existing Claude subscription, so it adds no per-call cost.
+
+What it demonstrates:
+
+- **Moving HR data off Visier to BigQuery:** a 48-row inventory in Visier's terms, a migration plan,
+  and closed periods reconciled at two levels: 30 of 30 checks against the source, and Visier's
+  published definitions emulated with every difference explained. There is no Visier tenant here.
+- **Fivetran sync failures and schema drift:** live logical replication, two sync-failure drills
+  (one a table Fivetran dropped while reporting a successful sync), and a schema contract that stops
+  a renamed or retyped column at the raw layer.
+- **Dimensional modelling in BigQuery:** a dbt star schema with an SCD2 employee dimension, facts at
+  declared grains and 131 data tests.
+- **LookML and dashboards:** a LookML model (8 views, 3 explores) checked by an offline validator,
+  because Looker has no free tier, and a four-page Data Studio (formerly Looker Studio) dashboard whose
+  tiles were checked against SQL.
+- **Documentation for people and AI agents:** every mart column documented; with the docs, an agent
+  answering 20 HR questions in SQL went from 7 correct to 17.
 
 ## What runs
 
@@ -20,10 +36,10 @@ free plan and GitHub Actions ([decisions](docs/decisions.md)).
 | Part | How it runs | Latest result |
 | --- | --- | --- |
 | Fivetran replication | Neon source to a Neon landing database, logical replication every 6 hours; `make ingest` copies the landing schema into BigQuery | Initial sync: 8 tables, 143,996 rows, every count matching the source. `make check-ingestion`: source, landing and BigQuery agree |
-| Nightly build and tests | GitHub Actions at 01:23 UTC: load BigQuery, rebuild and test prod, report source freshness and storage, simulate the next HR business day | 2 seeds, 21 models and 131 data tests, all passing |
+| Nightly build and tests | GitHub Actions at 01:23 UTC: load BigQuery, rebuild and test prod, report storage and, unless `PAUSE_SIMULATION` is set, report source freshness and simulate the next HR business day. The simulation was paused on 2026-10-15, so every figure in these docs can be reproduced | 2 seeds, 21 models and 131 data tests, all passing |
 | Documentation | `make docs`: dbt docs, the agent's schema context, a coverage check | 8 mart models and 132 columns: 140 of 140 documented |
-| LookML checks | `make validate-lookml`, offline | 8 views, 3 explores, 8 dashboard tiles: 0 errors, 0 warnings |
-| Data Studio dashboard | HR Overview: 4 pages over the reporting views, read with the owner's credentials (the report is private) | Every Q3 2026 tile and the 2025 funnel match SQL on the views; Division = Engineering matches on Workforce (6.59%) and Recruiting |
+| LookML checks | `make validate-lookml`: an offline validator written for this repo, because Looker has no free tier | 8 views, 3 explores, 8 dashboard tiles: 0 errors, 0 warnings |
+| Data Studio dashboard | HR Overview: 4 pages over the reporting views, kept private to protect the sandbox's free query allowance (screenshots below) | Every Q3 2026 tile and the 2025 funnel match SQL on the views; Division = Engineering matches on Workforce (6.59%) and Recruiting |
 | Text-to-SQL eval | `make eval` | 7/20 bare schema, 17/20 documented, 20/20 improved (in-sample); held-out 4/8, 8/8, 8/8 |
 | Visier reconciliation | `make migration-check` | Same definitions, source vs warehouse: 30 of 30 checks PASS (22 month-end headcounts, 8 period metrics). Visier's definitions: 6 PASS, 6 EXPLAINED to a zero residual, 0 FAIL |
 | Drills | `make drill NAME=...` | 3 schema-drift drills, each caught by the contract test; 2 live Fivetran drills, including a table dropped from replication that Fivetran reported as a successful sync and `make check-ingestion` caught |
@@ -218,7 +234,8 @@ drills changed the source's columns. They were loaded with the bootstrap load
 (`make ingest SOURCE=direct`) and built with `dbt build`. An added column raised one warning and
 nothing else moved. A rename and a type change failed the contract at the raw layer and skipped the 31
 steps built on that table, so the marts kept their last good build. Through Fivetran the same changes
-arrive differently, and the runbook covers both paths: a rename comes in as a new column while the old
+arrive differently, according to Fivetran's documentation (these drills ran before the connection went
+live), and the runbook covers both paths: a rename comes in as a new column while the old
 one goes NULL on new rows, which the `not_null` test on `dim_employee.location` catches; Fivetran only
 widens types, so a retyped column stays text and staging already normalises `4` to `L4`.
 [Runbook](docs/runbook-schema-drift.md)
@@ -273,8 +290,10 @@ nothing, and `make storage-report` tracks bytes written against the 10 GiB lifet
 
 ### Semantic layer and recurring HR questions
 
-LookML, checked offline with `make validate-lookml`: a view per mart, three explores (Headcount,
-Attrition, Recruiting) and an 8-tile LookML dashboard, with 0 errors and 0 warnings. Exits join
+LookML: a view per mart, three explores (Headcount, Attrition, Recruiting) and an 8-tile LookML
+dashboard. Looker has no free tier, so [scripts/validate_lookml.py](scripts/validate_lookml.py) checks
+it offline (parsing, field references against the dbt columns, join fanout, access filters and
+dashboard tiles): 0 errors and 0 warnings. Exits join
 one-to-one onto the leaver's own headcount row on their last day, so any filter narrows exits and
 headcount together. Every explore has a row filter on division, and salary needs an access grant. The
 Data Studio dashboard, HR Overview, has four pages (Workforce, Attrition, Tenure, Recruiting) over
@@ -289,7 +308,8 @@ Q3 2026, an attrition rate of 6.59%. [docs/dashboards.md](docs/dashboards.md),
 
 **Data Studio, HR Overview: Workforce page.** The four quarters to 2026-09-30: headcount today, average
 headcount, starts, exits and the attrition rate, the monthly trend, and headcount by department and
-location. The [Attrition](docs/images/data-studio-attrition.png),
+location. The 'Engineering' row with one person is the head of Engineering; the Engineering teams are
+listed separately. The [Attrition](docs/images/data-studio-attrition.png),
 [Tenure](docs/images/data-studio-tenure.png) and [Recruiting](docs/images/data-studio-recruiting.png)
 pages follow the same layout.
 
@@ -328,7 +348,7 @@ in UTC.
 - Two Neon projects on the free plan: the source, with logical replication enabled, and the landing
   database. In each, create a `fivetran` role in the Neon console, and use the direct (not `-pooler`)
   connection strings.
-- A Fivetran account (Free plan).
+- A Fivetran account (the Free plan; new accounts start on a 14-day trial).
 - For `make eval`: the Claude Code CLI logged in to a claude.ai account, with `ANTHROPIC_API_KEY` unset.
 
 ### Cold start
@@ -380,7 +400,8 @@ Actions:
 - secrets `BQ_SA_KEY_JSON` (the whole service-account key JSON), `GCP_PROJECT_ID`, `POSTGRES_URL` and
   `LANDING_POSTGRES_URL`;
 - variable `INGEST_SOURCE` set to `fivetran` (`direct` loads straight from the source instead);
-- optionally, variable `PAUSE_SIMULATION` set to `true` to stop the simulated business days.
+- optionally, variable `PAUSE_SIMULATION` set to `true` to stop the simulated business days. With the
+  source frozen no new rows arrive, so the run skips the freshness check too.
 
 The workflow sets `BQ_LOCATION` to `asia-south1`; change it if your datasets are elsewhere. When
 something breaks, see the [schema drift](docs/runbook-schema-drift.md) and
@@ -414,7 +435,7 @@ Docs:
 [migration inventory](docs/migration-inventory.csv) ·
 [reconciliation](docs/reconciliation.md)
 
-## In production
+## In production: the design with a budget
 
 The free tiers shaped a few choices that change with a budget. How the design scales, from sections 5
 to 7 of [docs/architecture.md](docs/architecture.md):

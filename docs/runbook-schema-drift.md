@@ -2,8 +2,9 @@
 
 For when a source table's columns change under the warehouse: a column is **added**, **renamed** or
 **changes type**. Each case was rehearsed with a drill script in [simulations/](../simulations/), and
-the outputs below come from those runs. The [data contract](data-contract-hris.md) lists what the
-warehouse depends on.
+the outputs below come from those runs. The drills ran with the bootstrap load, before the Fivetran
+connection was live; the "With Fivetran" column comes from Fivetran's documentation. The
+[data contract](data-contract-hris.md) lists what the warehouse depends on.
 
 ## How it's detected
 
@@ -28,7 +29,7 @@ warehouse depends on.
 
 ## What each change looks like
 
-| Change | With Fivetran | With the bootstrap load (tested) | Effect on dashboards |
+| Change | With Fivetran (per its docs) | With the bootstrap load (tested) | Effect on dashboards |
 | --- | --- | --- | --- |
 | **Column added** (`work_mode` on `hris_employees`) | Fivetran adds the column to the landing table; the next load copies it | additive contract **WARN**: `hris_employees.work_mode: contract says NOT IN CONTRACT, table has STRING`; everything else passes | none |
 | **Column renamed** (`location` → `work_location` on `hris_job_history`) | Fivetran adds `work_location` and keeps `location`, which is NULL on every row written after the rename | `location` is gone: breaking contract **FAIL** (`contract says STRING, table has MISSING`) and additive **WARN** (`work_location`); `dbt build` skips staging and everything built from it | Fivetran: people who change jobs show a blank location, and `not_null` on `dim_employee.location` **FAILS**. Bootstrap: marts keep the previous build |

@@ -16,6 +16,9 @@ concurrency:
   group: nightly
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   pipeline:
     runs-on: ubuntu-24.04
@@ -32,6 +35,8 @@ jobs:
       INGEST_SOURCE: ${{ vars.INGEST_SOURCE }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - uses: astral-sh/setup-uv@v10.2.0
         with:
@@ -63,8 +68,9 @@ jobs:
         if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: make dbt-nightly TARGET=prod
 
+      # With the source frozen no new rows arrive, so freshness would only report the pause.
       - name: Source freshness (reported, never blocks)
-        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.install.outcome == 'success' && vars.PAUSE_SIMULATION != 'true' }}
         continue-on-error: true
         run: make freshness TARGET=prod
 
@@ -80,4 +86,8 @@ jobs:
 
       - name: Summary
         if: always()
-        run: .venv/bin/python scripts/ci_summary.py >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          .venv/bin/python scripts/ci_summary.py >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ vars.PAUSE_SIMULATION }}" = "true" ]; then
+            printf '\nSource frozen (PAUSE_SIMULATION): no business day simulated, freshness not checked.\n' >> "$GITHUB_STEP_SUMMARY"
+          fi

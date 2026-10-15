@@ -5,7 +5,7 @@ Each entry is dated. When a later decision replaces one, the old entry says so i
 
 Constraints that drive most of these:
 - **Stack:** BigQuery, Fivetran, dbt and LookML/Looker, with Data Studio for live dashboards.
-- **₹0 and no payment card anywhere.** Scale isn't needed: the data is a few hundred thousand rows at most.
+- **₹0 and no payment card on any data platform.** Scale isn't needed: the data is a few hundred thousand rows at most. (The text-to-SQL eval uses an existing Claude subscription, D8.)
 - **All data is synthetic.**
 
 Verified platform limits behind these decisions are in [platform-notes.md](platform-notes.md).
@@ -34,7 +34,7 @@ a ~₹1,000 prepayment) and a paid billing account (needs a card; nothing truly 
 *2026-10-14*
 
 **Decision.** The data flows like this:
-1. Fivetran (Free plan) syncs the HRIS source into a second Neon Postgres database, the landing zone,
+1. Fivetran (the Free plan, after the 14-day trial) syncs the HRIS source into a second Neon Postgres database, the landing zone,
    using Fivetran's generic PostgreSQL destination.
 2. `load_to_bigquery.py` copies each landed table, including Fivetran's `_fivetran_synced` and
    `_fivetran_deleted` columns, into BigQuery dataset `raw_hris` with batch load jobs. Batch loads are
@@ -85,7 +85,7 @@ called `hris`.
   have REPLICATION, and those roles are members of `neon_superuser` (which can read every table). That's
   why the "stop one table" drill removes the table from the replication publication instead of revoking
   SELECT. In production the source login would be a replication-only role.
-- **gcloud setup** runs as the personal account, in a gcloud configuration used only by this repo.
+- **gcloud setup** runs as the Google account that owns the project, in a gcloud configuration used only by this repo.
 
 ## D5. dbt Core 1.12 + dbt-bigquery, not the new `dbt` package
 *2026-10-14*
