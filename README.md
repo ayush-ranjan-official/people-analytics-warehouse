@@ -10,7 +10,7 @@ BigQuery and modelled with dbt into a documented star schema, so that people (th
 agents (through documentation they read before writing SQL) get the same, correct answer. A migration
 rehearsal reconciles the warehouse's metrics against the source and against Visier's published
 definitions. The pipeline runs at no cost and with no payment card: the BigQuery sandbox, Fivetran's
-Free plan, Neon's free plan and GitHub Actions ([decisions](docs/decisions.md)). The text-to-SQL eval
+free tier (a 14-day trial, then the Free plan), Neon's free plan and GitHub Actions ([decisions](docs/decisions.md)). The text-to-SQL eval
 runs on an existing Claude subscription, so it adds no per-call cost.
 
 What it demonstrates:
